@@ -1,0 +1,72 @@
+---
+title: "Colorado Net Migration by Age"
+subtitle: "2010-2020 and 2020-2025"
+---
+
+The Census Bureau publishes county population by age, and it publishes total net
+migration by county, but not net migration *by age* below the state level. This
+site estimates it as a demographic residual: for each cohort, net migration is
+whatever is left once observed births and deaths are removed from the population
+change.
+
+$$
+\text{NM}(c) = \text{Pop}_{\text{end}}(c) - \text{Pop}_{\text{start}}(c) - \text{Births}(c) + \text{Deaths}(c)
+$$
+
+Cohorts are keyed by **age at the end of the period**, so a group labelled 25–29
+in the 2010–2020 period is the people who were 25–29 in 2020 and 15–19 in 2010.
+Keying on the ending age means every group has a real age, including the children
+born along the way.
+
+## What's here
+
+::: {.grid}
+
+::: {.g-col-12 .g-col-md-6}
+### [Report](netmig-by-age.qmd)
+Method, validation, and the statewide and county results for 2020–2025, with the
+caveats that matter for interpreting them.
+:::
+
+::: {.g-col-12 .g-col-md-6}
+### [Dashboard](dashboard.qmd)
+Compare any county against others in a period, or against itself across the two
+periods, in annual levels or rates per 1,000.
+:::
+
+:::
+
+## The headline
+
+Colorado's net migration fell from about **45,000 a year** in 2010–2020 to about
+**28,300 a year** in 2020–2025. The age profile changed more than the total did.
+
+| Age at end of period | 2010–2020 | 2020–2025 |
+|---|---:|---:|
+| 5–9 | 8.3 | 4.3 |
+| 10–14 | 9.5 | 2.0 |
+| **25–29** | **26.9** | **36.3** |
+| 30–34 | 27.6 | 19.3 |
+| 45–49 | 3.2 | −1.3 |
+| 60–64 | −0.2 | −5.9 |
+| 65–69 | 0.5 | −6.0 |
+
+: Annual net migration per 1,000 people {.striped tbl-colwidths="[40,30,30]"}
+
+The peak did not just shrink — it moved, narrowed, and grew taller. Colorado used
+to draw people across a broad plateau of young adulthood, with 25–29 and 30–34
+gaining at almost the same rate. That plateau has collapsed into a single sharp
+peak at 25–29, now the highest rate in either period.
+
+Either side of it, rates fell almost everywhere. The inflow of school-age
+children largely stopped, and every group from 45–49 upward crossed into negative
+territory. Colorado is drawing twenty-somethings harder than it ever did, and is
+no longer drawing the families and older movers that used to come with them.
+
+## Caveat
+
+The Census and SDO county age estimates are themselves cohort-component output,
+built from these same vital records plus the agencies' own migration signals.
+This recovers the net migration by age *implied by* those published estimates. It
+is the right number for anyone working from them, but it inherits their
+assumptions rather than testing them.

@@ -1,0 +1,44 @@
+/* Small polish layer for the net-migration comparison dashboard.
+   Kept intentionally minimal — Quarto's dashboard/bslib defaults do most of
+   the work; this only fixes a few OJS-specific rough edges. */
+
+/* Observable Inputs render their own label; give sidebar controls breathing room */
+.quarto-dashboard .sidebar .observablehq--inspect,
+.quarto-dashboard .sidebar form {
+  margin-bottom: 0.9rem;
+}
+
+/* Native multi-select (Compare Areas county picker) is too short by default */
+.quarto-dashboard select[multiple] {
+  min-height: 220px;
+}
+
+/* Helper captions under a selector */
+.control-hint {
+  font-size: 0.8rem;
+  color: #6c757d;
+  margin-top: -0.5rem;
+  margin-bottom: 0.75rem;
+  font-style: italic;
+}
+
+/* Value box value text: a little larger and tabular so figures line up */
+.quarto-dashboard .value-box-value {
+  font-size: 1.55rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.quarto-dashboard .value-box-title {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+/* Keep interactive tables from forcing the card taller than its row */
+.quarto-dashboard .card .observablehq table {
+  font-size: 0.85rem;
+}
+
+/* Download button spacing when it sits under a table in the same card */
+.dl-button {
+  margin-top: 0.5rem;
+}

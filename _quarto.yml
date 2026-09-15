@@ -1,0 +1,37 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - index.qmd
+    - netmig-by-age.qmd
+    - dashboard.qmd
+  resources:
+    - output/*.csv
+
+# The data build needs the SDO shared drive and the internal sdotools package,
+# neither of which exists on a CI runner. Freezing the computed chunk results
+# lets GitHub Actions render the site with Quarto alone. Re-run the R scripts
+# locally and re-render when the data changes; commit the _freeze directory.
+execute:
+  freeze: auto
+
+website:
+  title: "Colorado Net Migration by Age"
+  description: "Net migration by age for Colorado and its counties, 2010-2020 and 2020-2025"
+  site-url: https://gtottensdo.github.io/co-netmig-by-age-gt/
+  navbar:
+    left:
+      - href: index.qmd
+        text: Overview
+      - href: netmig-by-age.qmd
+        text: Report
+      - href: dashboard.qmd
+        text: Dashboard
+  page-footer:
+    center: "Colorado State Demography Office"
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    embed-resources: false

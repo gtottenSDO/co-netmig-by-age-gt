@@ -1,0 +1,28 @@
+# Census inputs are re-downloaded by R/01 on first run
+data-raw/
+
+# Rendered site is rebuilt by CI from _freeze; _freeze itself IS committed
+_site/
+.quarto/
+
+# R
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+# OS
+.DS_Store
+Thumbs.db
+
+/.quarto/
+**/*.quarto_ipynb
+
+# Strays from rendering a page standalone rather than as part of the project;
+# the real copies live under _site/
+/site_libs/
+/dashboard_files/
+
+# Full results including county-level vital counts from restricted-use CDPHE
+# records. R/04-publish-outputs.R derives the public output/ from this.
+output-internal/
