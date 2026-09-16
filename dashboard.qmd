@@ -1,6 +1,6 @@
 ---
 title: "Colorado Net Migration by Age"
-subtitle: "Comparing areas and periods, 2010-2020 vs 2020-2025"
+subtitle: "Comparing areas and periods, 1990-2025"
 format:
   dashboard:
     theme: cosmo
@@ -12,7 +12,7 @@ execute:
 
 ```{=html}
 <!--
-Data: output/netmig-comparison.csv (7,020 rows). Built by R/03-compare-periods.R.
+Data: output/netmig-comparison.csv (14,040 rows). Built by R/03-compare-periods.R.
 This dashboard is pure OJS -- no R/Shiny -- so it can be deployed as a static
 page on GitHub Pages. See the "Methods" tab for definitions and caveats, and
 netmig-by-age.html for the full derivation.
@@ -61,16 +61,159 @@ countyOptions = {
 
 ```{ojs}
 //| echo: false
-periodOptions = ["2010-2020", "2020-2025"]
+// Chronological order drives every sort/legend/earliest-latest calc below.
+periodOptions = ["1990-2000", "2000-2010", "2010-2020", "2020-2025"]
 ```
 
 ```{ojs}
 //| echo: false
 periodYears = {
   return {
+    "1990-2000": { start: 1990, end: 2000 },
+    "2000-2010": { start: 2000, end: 2010 },
     "2010-2020": { start: 2010, end: 2020 },
     "2020-2025": { start: 2020, end: 2025 }
   };
+}
+```
+
+```{ojs}
+//| echo: false
+// Fixed period -> colour mapping so a period's colour never changes as the
+// selection changes. Keeps SDO navy/orange for the two most-viewed periods.
+periodColor = new Map([
+  ["1990-2000", "#6B7280"],
+  ["2000-2010", "#8B5FBF"],
+  ["2010-2020", "#E3791C"],
+  ["2020-2025", "#003E82"]
+])
+```
+
+```{ojs}
+//| echo: false
+// Same swatch order Plot's "tableau10" scheme would assign, but held here as
+// an explicit array so the SVG export can redraw the legend.
+countyColors = d3.schemeTableau10
+```
+
+```{ojs}
+//| echo: false
+measureSlug = (key) => (key === "rate_per_1000" ? "rate" : "people")
+```
+
+```{ojs}
+//| echo: false
+// ---- SVG export ----------------------------------------------------------
+// Observable Plot returns a bare <svg>, or (whenever a colour legend is
+// requested inline) a <figure> wrapping an <svg> plus an HTML legend div.
+// PowerPoint needs a self-contained, explicitly-sized SVG: Plot's on-page
+// look depends on a stylesheet class (currentColor fills/strokes) that does
+// not travel with a downloaded file, and the HTML legend has to be redrawn
+// as SVG shapes/text since it isn't part of the <svg> at all.
+buildExportSvg = (chart, legend) => {
+  // Plot returns a bare <svg> for a plain chart, but a <figure> wrapping the
+  // legend (tiny per-swatch <svg> icons!) plus the real chart <svg> whenever
+  // a colour legend is requested inline -- querySelector("svg") would grab
+  // the first swatch icon instead of the chart, so pick the largest one.
+  const root =
+    chart.tagName === "svg"
+      ? chart
+      : Array.from(chart.querySelectorAll("svg")).reduce((best, s) => {
+          const area = (r) => r.width * r.height;
+          if (!best) return s;
+          return area(s.getBoundingClientRect()) > area(best.getBoundingClientRect()) ? s : best;
+        }, null);
+  if (!root) return null;
+  const svg = root.cloneNode(true);
+
+  // Inline every element's *computed* fill/stroke/font so nothing depends
+  // on a CSS class that won't be present when the file is opened elsewhere.
+  const origEls = root.querySelectorAll("*");
+  const cloneEls = svg.querySelectorAll("*");
+  origEls.forEach((o, i) => {
+    const c = cloneEls[i];
+    if (!c) return;
+    const cs = getComputedStyle(o);
+    if (cs.fill && cs.fill !== "none") c.setAttribute("fill", cs.fill);
+    if (cs.stroke && cs.stroke !== "none" && cs.stroke !== "rgba(0, 0, 0, 0)") {
+      c.setAttribute("stroke", cs.stroke);
+    }
+    if (o.tagName === "text" || o.tagName === "tspan") {
+      c.setAttribute("font-family", cs.fontFamily);
+      c.setAttribute("font-size", cs.fontSize);
+    }
+  });
+
+  const w = +(root.getAttribute("width") ?? root.clientWidth ?? 800);
+  const h = +(root.getAttribute("height") ?? root.clientHeight ?? 400);
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", h);
+  svg.setAttribute("viewBox", root.getAttribute("viewBox") ?? `0 0 ${w} ${h}`);
+  svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+  if (legend && legend.domain.length) {
+    const itemW = 150;
+    const rowH = 20;
+    const perRow = Math.max(1, Math.floor(w / itemW));
+    const rows = Math.ceil(legend.domain.length / perRow);
+    const legendH = 10 + rows * rowH;
+    svg.setAttribute("height", h + legendH);
+    svg.setAttribute("viewBox", `0 0 ${w} ${h + legendH}`);
+    const wrapper = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    wrapper.setAttribute("transform", `translate(0, ${legendH})`);
+    while (svg.firstChild) wrapper.appendChild(svg.firstChild);
+    svg.appendChild(wrapper);
+    legend.domain.forEach((label, i) => {
+      const col = i % perRow;
+      const row = Math.floor(i / perRow);
+      const x = 6 + col * itemW;
+      const y = 6 + row * rowH;
+      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rect.setAttribute("x", x);
+      rect.setAttribute("y", y);
+      rect.setAttribute("width", 11);
+      rect.setAttribute("height", 11);
+      rect.setAttribute("fill", legend.range[i % legend.range.length]);
+      svg.appendChild(rect);
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", x + 15);
+      text.setAttribute("y", y + 9.5);
+      text.setAttribute("font-size", "11px");
+      text.setAttribute("font-family", "Arial, sans-serif");
+      text.setAttribute("fill", "#212529");
+      text.textContent = label;
+      svg.appendChild(text);
+    });
+  }
+
+  return svg;
+}
+```
+
+```{ojs}
+//| echo: false
+downloadChartSvg = (chart, filename, legend = null) => {
+  const svg = buildExportSvg(chart, legend);
+  if (!svg) return;
+  const xml = new XMLSerializer().serializeToString(svg);
+  const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+```
+
+```{ojs}
+//| echo: false
+svgDownloadButton = (chart, filename, legend = null) => {
+  const btn = html`<button class="btn btn-sm btn-outline-secondary dl-button">⬇ Download SVG</button>`;
+  btn.onclick = () => downloadChartSvg(chart, filename, legend);
+  return btn;
 }
 ```
 
@@ -143,12 +286,17 @@ aggregateMeasure = (rows, measureKey) => {
 
 ## {.sidebar}
 
-Follow one area across both periods to see how its age profile of net
-migration shifted.
+Follow one area across the selected periods to see how its age profile of
+net migration shifted.
 
 ```{ojs}
 //| echo: false
 viewof area_p = Inputs.select(countyOptions, { label: "Area", value: "Colorado" })
+```
+
+```{ojs}
+//| echo: false
+viewof periods_p = Inputs.checkbox(periodOptions, { label: "Periods", value: periodOptions })
 ```
 
 ```{ojs}
@@ -179,7 +327,29 @@ where that cohort started.
 
 ```{ojs}
 //| echo: false
-rows_p = data.filter((d) => d.county === area_p && d.sex_label === sex_p)
+// Chronological order regardless of the order the checkboxes report back in;
+// fall back to every period if the user unchecks all of them.
+selectedPeriods_p = {
+  const sel = periodOptions.filter((p) => periods_p.includes(p));
+  return sel.length ? sel : periodOptions;
+}
+```
+
+```{ojs}
+//| echo: false
+earliestPeriod_p = selectedPeriods_p[0]
+```
+
+```{ojs}
+//| echo: false
+latestPeriod_p = selectedPeriods_p[selectedPeriods_p.length - 1]
+```
+
+```{ojs}
+//| echo: false
+rows_p = data.filter(
+  (d) => d.county === area_p && d.sex_label === sex_p && selectedPeriods_p.includes(d.period)
+)
 ```
 
 ```{ojs}
@@ -189,33 +359,39 @@ byPeriod_p = d3.group(rows_p, (d) => d.period)
 
 ```{ojs}
 //| echo: false
-val2010_p = aggregateMeasure(byPeriod_p.get("2010-2020") ?? [], measure_p)
+valEarliest_p = aggregateMeasure(byPeriod_p.get(earliestPeriod_p) ?? [], measure_p)
 ```
 
 ```{ojs}
 //| echo: false
-val2020_p = aggregateMeasure(byPeriod_p.get("2020-2025") ?? [], measure_p)
+valLatest_p = aggregateMeasure(byPeriod_p.get(latestPeriod_p) ?? [], measure_p)
 ```
 
 ```{ojs}
 //| echo: false
-peakRow_p = (byPeriod_p.get("2020-2025") ?? [])
+peakRow_p = (byPeriod_p.get(latestPeriod_p) ?? [])
   .reduce((a, b) => (b[measure_p] > a[measure_p] ? b : a))
 ```
 
 ```{ojs}
 //| echo: false
-shiftRows_p = Array.from(d3.group(rows_p, (d) => d.age_group), ([age_group, arr]) => {
-  const r1 = arr.find((d) => d.period === "2010-2020");
-  const r2 = arr.find((d) => d.period === "2020-2025");
-  return {
-    age_group,
-    age_order: r1.age_order,
-    v1: r1[measure_p],
-    v2: r2[measure_p],
-    diff: r2[measure_p] - r1[measure_p]
-  };
-}).sort((a, b) => a.age_order - b.age_order)
+// Earliest vs. latest of the *selected* periods -- with only two selected
+// this is exactly the old two-period comparison; with more it summarizes
+// the full span while the grouped-bar chart above shows every period.
+shiftRows_p = Array.from(
+  d3.group(rows_p.filter((d) => d.period === earliestPeriod_p || d.period === latestPeriod_p), (d) => d.age_group),
+  ([age_group, arr]) => {
+    const r1 = arr.find((d) => d.period === earliestPeriod_p);
+    const r2 = arr.find((d) => d.period === latestPeriod_p);
+    return {
+      age_group,
+      age_order: r1.age_order,
+      v1: r1[measure_p],
+      v2: r2[measure_p],
+      diff: r2[measure_p] - r1[measure_p]
+    };
+  }
+).sort((a, b) => a.age_order - b.age_order)
 ```
 
 ```{ojs}
@@ -231,23 +407,23 @@ biggestShift_p = shiftRows_p.reduce((a, b) => (Math.abs(b.diff) > Math.abs(a.dif
 
 ```{ojs}
 //| content: valuebox
-//| title: "2010-2020, all ages"
+//| title: "Earliest selected period, all ages"
 //| icon: calendar3
 //| color: secondary
-html`${measures[measure_p].fmt(val2010_p)}`
+html`${earliestPeriod_p}: <strong>${measures[measure_p].fmt(valEarliest_p)}</strong>`
 ```
 
 ```{ojs}
 //| content: valuebox
-//| title: "2020-2025, all ages"
+//| title: "Latest selected period, all ages"
 //| icon: calendar2-check
 //| color: primary
-html`${measures[measure_p].fmt(val2020_p)}`
+html`${latestPeriod_p}: <strong>${measures[measure_p].fmt(valLatest_p)}</strong>`
 ```
 
 ```{ojs}
 //| content: valuebox
-//| title: "Peak age group, 2020-2025"
+//| title: "Peak age group, latest selected period"
 //| icon: graph-up-arrow
 //| color: success
 html`${peakRow_p.age_group}: <strong>${measures[measure_p].fmt(peakRow_p[measure_p])}</strong>`
@@ -255,7 +431,7 @@ html`${peakRow_p.age_group}: <strong>${measures[measure_p].fmt(peakRow_p[measure
 
 ```{ojs}
 //| content: valuebox
-//| title: "Largest shift between periods"
+//| title: "Largest shift, earliest → latest selected"
 //| icon: shuffle
 //| color: warning
 html`${biggestShift_p.age_group}: ${measures[measure_p].fmtShort(biggestShift_p.v1)} → <strong>${measures[measure_p].fmtShort(biggestShift_p.v2)}</strong>`
@@ -263,9 +439,10 @@ html`${biggestShift_p.age_group}: ${measures[measure_p].fmtShort(biggestShift_p.
 
 ### Row {height="42%"}
 
+::: {.card title="Net migration by age group, selected periods"}
+
 ```{ojs}
-//| title: "Net migration by age group, both periods"
-Plot.plot({
+chart_p1 = Plot.plot({
   width,
   height: 380,
   marginBottom: 66,
@@ -273,8 +450,8 @@ Plot.plot({
   fx: { domain: ageLevels, label: "Age at end of period (cohort)", tickRotate: -45 },
   y: { label: measures[measure_p].axis, grid: true, tickFormat: measures[measure_p].tickFormat },
   color: {
-    domain: periodOptions,
-    range: ["#94a3b8", "#003E82"],
+    domain: selectedPeriods_p,
+    range: selectedPeriods_p.map((p) => periodColor.get(p)),
     legend: true,
     label: "Period"
   },
@@ -291,12 +468,28 @@ Plot.plot({
 })
 ```
 
+```{ojs}
+//| echo: false
+svgDownloadButton(
+  chart_p1,
+  `co-netmig-compare-periods-${area_p.replace(/\s+/g, "_")}-${measureSlug(measure_p)}.svg`,
+  { domain: selectedPeriods_p, range: selectedPeriods_p.map((p) => periodColor.get(p)) }
+)
+```
+
+:::
+
 ### Row {height="38%"}
 
-::: {.card title="How each age group shifted, 2010-2020 → 2020-2025" width="45%"}
+::: {.card title="How each age group shifted" width="45%"}
 
 ```{ojs}
-Plot.plot({
+//| echo: false
+md`**${earliestPeriod_p} → ${latestPeriod_p}**${selectedPeriods_p.length > 2 ? " (earliest vs. latest of the selected periods)" : ""}`
+```
+
+```{ojs}
+chart_p2 = Plot.plot({
   width,
   height: 340,
   marginLeft: 55,
@@ -320,6 +513,14 @@ Plot.plot({
 ```
 
 Navy = the rate rose between periods; orange = it fell (or turned negative).
+
+```{ojs}
+//| echo: false
+svgDownloadButton(
+  chart_p2,
+  `co-netmig-shift-${area_p.replace(/\s+/g, "_")}-${earliestPeriod_p}-to-${latestPeriod_p}-${measureSlug(measure_p)}.svg`
+)
+```
 :::
 
 ::: {.card title="Selected data" width="55%"}
@@ -472,9 +673,10 @@ html`${widest_a.age_group}: <strong>${measures[measure_a].fmtShort(widest_a.spre
 
 ### Row {height="46%"}
 
+::: {.card title="Net migration by age group, selected areas"}
+
 ```{ojs}
-//| title: "Net migration by age group, selected areas"
-Plot.plot({
+chart_a = Plot.plot({
   width,
   height: 420,
   marginBottom: 66,
@@ -482,7 +684,7 @@ Plot.plot({
   y: { label: measures[measure_a].axis, grid: true, tickFormat: measures[measure_a].tickFormat },
   color: {
     domain: counties_a,
-    scheme: "tableau10",
+    range: countyColors,
     legend: true,
     label: "Area"
   },
@@ -508,6 +710,17 @@ Plot.plot({
   ]
 })
 ```
+
+```{ojs}
+//| echo: false
+svgDownloadButton(
+  chart_a,
+  `co-netmig-compare-areas-${period_a}-${measureSlug(measure_a)}.svg`,
+  { domain: counties_a, range: countyColors }
+)
+```
+
+:::
 
 ### Row {height="34%"}
 
@@ -556,19 +769,20 @@ downloadLink_a = {
 ::: {.card title="What this dashboard shows"}
 
 This dashboard compares Colorado's implied net migration by age across
-**64 counties** and **two periods** (2010-2020 and 2020-2025), estimated as a
-demographic residual: population change minus births plus deaths, by age
-cohort. Full derivation, validation, and county-by-county narrative are in the
-companion report: [netmig-by-age.html](netmig-by-age.html).
+**64 counties** and **four periods** (1990-2000, 2000-2010, 2010-2020, and
+2020-2025), estimated as a demographic residual: population change minus
+births plus deaths, by age cohort. Full derivation, validation, and
+county-by-county narrative are in the companion report:
+[netmig-by-age.html](netmig-by-age.html).
 
 ### Reading the age groups
 
 `age_group` is **age at the end of the period**, not the start. A bar or point
 labeled `25-29` in the 2020-2025 period represents the cohort that was 20-24 in
 2020 and turned 25-29 by 2025 -- follow the arrow in any tooltip
-("20-24 in 2020 &rarr; 25-29 in 2025") to see where that group started. Both
-periods share the same 18 age-group levels, which is what makes them directly
-comparable group-for-group.
+("20-24 in 2020 &rarr; 25-29 in 2025") to see where that group started. All
+four periods share the same 18 age-group levels, which is what makes them
+directly comparable group-for-group.
 
 ### Choosing a measure
 
@@ -582,22 +796,27 @@ Two measures are offered as equal, first-class options:
   This is the size-neutral measure: it is what lets a small county be compared
   fairly against Denver or the state as a whole. It is the default.
 
-Both measures are annualized, so **both are valid to compare across the two
-periods** even though one period is 10 years and the other is 5. (The raw,
-un-annualized period-level net migration is not shown in this dashboard for
-exactly that reason -- it is not comparable across periods of different
-length.)
+Both measures are annualized, so **both are valid to compare across all four
+periods** even though three of them (1990-2000, 2000-2010, 2010-2020) are 10
+years long and the most recent (2020-2025) is 5. (The raw, un-annualized
+period-level net migration is not shown in this dashboard for exactly that
+reason -- it is not comparable across periods of different length.)
 
 ### The headline pattern
 
-In 2010-2020, Colorado's net in-migration formed a broad plateau across ages
-25-34 (roughly +27 per 1,000 per year in both the 25-29 and 30-34 groups). In
-2020-2025 that plateau collapsed into a single sharp, taller peak at 25-29
-(+36.3 per 1,000 per year) while every age group from 45-49 upward moved
-negative -- family-age and pre-retirement out-migration that was mild or
-positive in the prior decade. Use the **Compare periods** tab on Colorado to
-see this shape change directly, then switch the area selector to check whether
-your county of interest follows the same pattern.
+The 25-29 age group traces Colorado's boom-bust migration history: an annual
+rate of +38.4 per 1,000 in 1990-2000, roughly halving to +19.0 in 2000-2010,
+recovering to +26.9 in 2010-2020, and then jumping to +36.3 in 2020-2025 --
+this dashboard's sharpest, narrowest peak in the whole series. Older working
+ages tell the opposite story: the 55-59 group ran positive in every prior
+period (+8.96 in 1990-2000, +1.27 in 2000-2010, +1.26 in 2010-2020) and then
+turned negative for the first time in 2020-2025 (-5.06). In short, Colorado
+used to draw people at nearly every age -- the 1990s profile was positive
+across almost the whole age range -- and now draws almost exclusively young
+adults while older workers net out-migrate. Use the **Compare periods** tab
+on Colorado with all four periods selected to see this shape change directly,
+then switch the area selector to check whether your county of interest
+follows the same pattern.
 
 ### Caveats
 
