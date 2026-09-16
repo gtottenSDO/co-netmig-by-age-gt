@@ -1,6 +1,6 @@
 ---
 title: "Colorado Net Migration by Age"
-subtitle: "2010-2020 and 2020-2025"
+subtitle: "1990 to 2025"
 ---
 
 The Census Bureau publishes county population by age, and it publishes total net
@@ -13,10 +13,11 @@ $$
 \text{NM}(c) = \text{Pop}_{\text{end}}(c) - \text{Pop}_{\text{start}}(c) - \text{Births}(c) + \text{Deaths}(c)
 $$
 
-Cohorts are keyed by **age at the end of the period**, so a group labelled 25–29
-in the 2010–2020 period is the people who were 25–29 in 2020 and 15–19 in 2010.
-Keying on the ending age means every group has a real age, including the children
-born along the way.
+Four periods are covered — **1990–2000, 2000–2010, 2010–2020 and 2020–2025** —
+for Colorado and each of its 64 counties. Cohorts are keyed by **age at the end
+of the period**, so a group labelled 25–29 in 2010–2020 is the people who were
+25–29 in 2020 and 15–19 in 2010. Keying on the ending age means every group has
+a real age, including the children born along the way.
 
 ## What's here
 
@@ -24,44 +25,51 @@ born along the way.
 
 ::: {.g-col-12 .g-col-md-6}
 ### [Report](netmig-by-age.qmd)
-Method, validation, and the statewide and county results for 2020–2025, with the
-caveats that matter for interpreting them.
+Method, validation, and results, with the caveats that matter for interpreting
+them.
 :::
 
 ::: {.g-col-12 .g-col-md-6}
 ### [Dashboard](dashboard.qmd)
-Compare any county against others in a period, or against itself across the two
-periods, in annual levels or rates per 1,000.
+Compare counties against each other within a period, or against themselves
+across the four periods, in annual levels or rates per 1,000.
 :::
 
 :::
 
 ## The headline
 
-Colorado's net migration fell from about **45,000 a year** in 2010–2020 to about
-**28,300 a year** in 2020–2025. The age profile changed more than the total did.
+Colorado's net migration has swung widely — about 71,800 a year in the 1990s,
+31,900 in the 2000s, 45,000 in the 2010s, and 28,300 since 2020. But the *shape*
+of who came has changed far more than the total.
 
-| Age at end of period | 2010–2020 | 2020–2025 |
-|---|---:|---:|
-| 5–9 | 8.3 | 4.3 |
-| 10–14 | 9.5 | 2.0 |
-| **25–29** | **26.9** | **36.3** |
-| 30–34 | 27.6 | 19.3 |
-| 45–49 | 3.2 | −1.3 |
-| 60–64 | −0.2 | −5.9 |
-| 65–69 | 0.5 | −6.0 |
+| Age at end of period | 1990–2000 | 2000–2010 | 2010–2020 | 2020–2025 |
+|---|---:|---:|---:|---:|
+| 5–9 | 18.3 | 4.3 | 8.3 | 4.3 |
+| 10–14 | 20.0 | 11.2 | 9.5 | 2.0 |
+| 20–24 | 30.4 | 11.2 | 12.9 | 14.8 |
+| **25–29** | **38.4** | **19.0** | **26.9** | **36.3** |
+| 30–34 | 33.4 | 15.9 | 27.6 | 19.3 |
+| 40–44 | 16.4 | 5.5 | 7.9 | 2.2 |
+| 50–54 | 11.2 | 2.3 | 1.3 | −4.2 |
+| 60–64 | 6.4 | 1.5 | −0.2 | −5.9 |
+| 70–74 | 4.2 | 2.0 | −0.5 | −4.7 |
 
-: Annual net migration per 1,000 people {.striped tbl-colwidths="[40,30,30]"}
+: Annual net migration per 1,000 people {.striped tbl-colwidths="[28,18,18,18,18]"}
 
-The peak did not just shrink — it moved, narrowed, and grew taller. Colorado used
-to draw people across a broad plateau of young adulthood, with 25–29 and 30–34
-gaining at almost the same rate. That plateau has collapsed into a single sharp
-peak at 25–29, now the highest rate in either period.
+In the 1990s Colorado gained people at **every single age**, from infants to the
+very old — the weakest group still ran at nearly 4 per 1,000 a year. Nothing
+since has looked like that.
 
-Either side of it, rates fell almost everywhere. The inflow of school-age
-children largely stopped, and every group from 45–49 upward crossed into negative
-territory. Colorado is drawing twenty-somethings harder than it ever did, and is
-no longer drawing the families and older movers that used to come with them.
+Today the peak is almost back to 1990s height: 25–29 runs at 36.3 per 1,000 a
+year against 38.4 in the boom. But the base beneath it has fallen away. Every
+group from 45–49 upward is now **negative**, and the flow of school-age children
+has all but stopped.
+
+So the state is not drawing fewer young adults than it used to. It is drawing
+almost exactly as many, and far fewer of everyone else. Where Colorado once
+attracted families and retirees alongside its twenty-somethings, it now
+attracts the twenty-somethings and loses the rest.
 
 ## Caveat
 
