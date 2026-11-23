@@ -23,8 +23,8 @@ out_dir <- file.path(proj_dir, "output-internal") # check results, not committed
 years <- 2020:2025
 
 # The Census files are downloaded by R/00.
-raw_dir <- file.path(raw_dir, "census")
-stopifnot(file.exists(file.path(raw_dir, "cc-est2025-agesex-08.csv")))
+census_dir <- file.path(raw_dir, "census")
+stopifnot(file.exists(file.path(census_dir, "cc-est2025-agesex-08.csv")))
 
 # ---- SDO population and components (public lookups service) ----------------
 
@@ -82,7 +82,7 @@ age_group_cols <- tibble::tibble(
 # YEAR 2 is 7/1/2020 and YEAR 7 is 7/1/2025; YEAR 1 (the April 2020 base) is
 # dropped. Rows with COUNTY 000 are the state.
 pep_age <- readr::read_csv(
-  file.path(raw_dir, "cc-est2025-agesex-08.csv"),
+  file.path(census_dir, "cc-est2025-agesex-08.csv"),
   col_types = readr::cols(.default = "c")
 ) |>
   dplyr::filter(YEAR %in% as.character(2:7)) |>
@@ -122,7 +122,7 @@ pep_age <- pep_age |>
 
 # Census components by county and year, in long form. SUMLEV 040 is the state.
 pep_alldata <- readr::read_csv(
-  file.path(raw_dir, "co-est2025-alldata.csv"),
+  file.path(census_dir, "co-est2025-alldata.csv"),
   col_types = readr::cols(.default = "c")
 ) |>
   dplyr::filter(STATE == "08") |>

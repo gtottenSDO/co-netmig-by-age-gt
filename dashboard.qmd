@@ -898,14 +898,25 @@ viewof basis_c = Inputs.radio(
 ```{ojs}
 //| echo: false
 // Saves the span currently selected above; see the "Compare spans" tab.
+// At most nine saved spans: with the current span that is ten bars per group,
+// one for each colour in the palette, so no two spans share a colour.
 viewof addSpan_c = Inputs.button("Add this span to the comparison", {
+  disabled: savedSpans_c.length >= maxSavedSpans_c,
   reduce: () => {
     const key = `${start_c}-${end_c}`;
-    if (!savedSpans_c.some((d) => `${d.start}-${d.end}` === key)) {
+    if (
+      savedSpans_c.length < maxSavedSpans_c &&
+      !savedSpans_c.some((d) => `${d.start}-${d.end}` === key)
+    ) {
       mutable savedSpans_c = [...savedSpans_c, { start: start_c, end: end_c }];
     }
   }
 })
+```
+
+```{ojs}
+//| echo: false
+maxSavedSpans_c = countyColors.length - 1
 ```
 
 ```{ojs}
@@ -919,7 +930,7 @@ viewof clearSpans_c = Inputs.button("Clear the comparison", {
 
 ```{ojs}
 //| echo: false
-html`<div class="control-hint">Saved: ${savedSpans_c.length ? savedSpans_c.map((d) => `${d.start}-${d.end}`).join(", ") : "none yet"}</div>`
+html`<div class="control-hint">Saved: ${savedSpans_c.length ? savedSpans_c.map((d) => `${d.start}-${d.end}`).join(", ") : "none yet"}${savedSpans_c.length >= maxSavedSpans_c ? ` (the maximum of ${maxSavedSpans_c}; clear to add others)` : ""}</div>`
 ```
 
 ::: {.callout-note}

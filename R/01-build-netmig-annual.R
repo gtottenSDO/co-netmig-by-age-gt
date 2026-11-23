@@ -160,12 +160,31 @@ life_tables <- life_table_files |>
       dplyr::transmute(
         table_year,
         sex,
+        age_label,
         age = as.integer(stringr::str_extract(age_label, "^\\d+")),
-        dx = as.numeric(dx),
-        Lx = as.numeric(Lx)
+        dplyr::across(c(lx, dx, Lx, Tx), as.numeric)
       )
   }) |>
-  purrr::list_rbind() |>
+  purrr::list_rbind()
+
+# The 2018-2023 tables end with an open "100 and over" row. The 1999-2001 table
+# ends at the closed interval 109-110, so the people still alive at 110 (lx - dx)
+# and the years they go on to live (Tx - Lx) are added as a final row, to keep
+# every table's 90+ group complete.
+life_tables <- life_tables |>
+  dplyr::bind_rows(
+    life_tables |>
+      dplyr::slice_max(age, n = 1, by = c(table_year, sex)) |>
+      dplyr::filter(!stringr::str_detect(age_label, "and")) |>
+      dplyr::transmute(
+        table_year,
+        sex,
+        age = age + 1L,
+        dx = lx - dx,
+        Lx = Tx - Lx
+      )
+  ) |>
+  dplyr::select(table_year, sex, age, dx, Lx) |>
   dplyr::mutate(age = pmin(age, max_age)) |>
   dplyr::summarise(dx = sum(dx), Lx = sum(Lx), .by = c(table_year, sex, age)) |>
   dplyr::mutate(log_m = log(dx / Lx))
@@ -198,24 +217,41 @@ rates_by_year <- tidyr::expand_grid(
   ) |>
   dplyr::select(year, sex, age, death_rate)
 
-# A cohort ending the year at age a lives it at ages a - 1 and a, half each;
-# newborns live it at age 0 only.
+# A cohort ending the year at age a < 90 lives it at ages a - 1 and a, half
+# each; newborns live it at age 0 only. The open group ending at 90+ mixes two
+# kinds of people: those 89 at the start, who live the year half at 89 and half
+# at 90+, and those already 90+, who live all of it at 90+. Its rate weights
+# the two by their statewide shares of the starting population.
+share_89 <- pop |>
+  dplyr::filter(age >= max_age - 1L) |>
+  dplyr::summarise(pop = sum(pop), .by = c(year, sex, age)) |>
+  dplyr::mutate(share_89 = pop / sum(pop), .by = c(year, sex)) |>
+  dplyr::filter(age == max_age - 1L) |>
+  # Population on July 1 of year t opens estimate year t + 1.
+  dplyr::transmute(year = year + 1L, sex, share_89)
+
 state_rates <- rates_by_year |>
   dplyr::left_join(
     rates_by_year |>
       dplyr::transmute(year, sex, age = age + 1L, rate_younger = death_rate),
     by = c("year", "sex", "age")
   ) |>
+  dplyr::left_join(share_89, by = c("year", "sex")) |>
   dplyr::transmute(
     year,
     sex,
     age_end = age,
-    death_rate = dplyr::if_else(
-      is.na(rate_younger) | age == max_age,
-      death_rate,
-      (death_rate + rate_younger) / 2
+    death_rate = dplyr::case_when(
+      is.na(rate_younger) ~ death_rate,
+      age == max_age ~ share_89 *
+        (death_rate + rate_younger) /
+        2 +
+        (1 - share_89) * death_rate,
+      .default = (death_rate + rate_younger) / 2
     )
   )
+
+stopifnot(!any(is.na(state_rates$death_rate)))
 
 # ---- County mortality ratios from the public 2025 reports -------------------
 

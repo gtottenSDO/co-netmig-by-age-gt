@@ -43,37 +43,61 @@ url_files <- tibble::tribble(
 
 # ---- Census and NCHS files --------------------------------------------------
 
+# A file counts as present only if it exists and is not empty. Each download
+# goes to a temporary name and is renamed only when it completes, so an
+# interrupted run never leaves a partial file that a rerun would skip.
+present <- function(path) file.exists(path) & file.size(path) > 0
+
 purrr::pwalk(url_files, \(folder, local, url, dest) {
-  if (!file.exists(dest)) {
+  if (!present(dest)) {
     dir.create(dirname(dest), showWarnings = FALSE, recursive = TRUE)
-    download.file(url, dest, mode = "wb", quiet = TRUE)
+    partial <- paste0(dest, ".part")
+    on.exit(unlink(partial), add = TRUE)
+    download.file(url, partial, mode = "wb", quiet = TRUE)
+    file.rename(partial, dest)
   }
 })
 
 # ---- CDPHE 2025 county reports ----------------------------------------------
 
 reports_dir <- file.path(raw_dir, "cdphe-county-reports-2025")
+dir.create(reports_dir, showWarnings = FALSE, recursive = TRUE)
 
-if (length(list.files(reports_dir, pattern = "\\.xlsx$")) == 0) {
-  dir.create(reports_dir, showWarnings = FALSE, recursive = TRUE)
-  # The folder is public, so no Google sign-in is needed.
-  googledrive::drive_deauth()
-  report_files <- googledrive::drive_ls(
-    googledrive::as_id("1dpS9IQJVXvW1bDnOvpDPlQ__fIewhg-X")
+# The folder is public, so no Google sign-in is needed. googledrive lists it
+# signed out, but its signed-out downloads fail, so each file comes through
+# Google's public download link instead. Only reports not yet present are
+# downloaded, so an interrupted run is completed by a rerun.
+googledrive::drive_deauth()
+report_files <- googledrive::drive_ls(
+  googledrive::as_id("1dpS9IQJVXvW1bDnOvpDPlQ__fIewhg-X")
+) |>
+  dplyr::mutate(
+    dest = file.path(reports_dir, name),
+    url = paste0("https://drive.google.com/uc?export=download&id=", id)
   )
-  purrr::walk2(report_files$id, report_files$name, \(id, name) {
-    googledrive::drive_download(
-      googledrive::as_id(id),
-      path = file.path(reports_dir, name),
-      overwrite = TRUE
-    )
+
+report_files |>
+  dplyr::filter(!present(dest)) |>
+  dplyr::select(url, dest) |>
+  purrr::pwalk(\(url, dest) {
+    partial <- paste0(dest, ".part")
+    on.exit(unlink(partial), add = TRUE)
+    download.file(url, partial, mode = "wb", quiet = TRUE)
+    file.rename(partial, dest)
   })
-}
 
 # ---- Check ------------------------------------------------------------------
 
-missing <- url_files |> dplyr::filter(!file.exists(dest))
-stopifnot(nrow(missing) == 0)
-stopifnot(length(list.files(reports_dir, pattern = "\\.xlsx$")) >= 64)
+missing_files <- tibble::tibble(dest = c(url_files$dest, report_files$dest)) |>
+  dplyr::filter(!present(dest)) |>
+  dplyr::pull(dest)
+
+if (length(missing_files) > 0) {
+  stop(
+    "Still missing or empty: ",
+    paste(basename(missing_files), collapse = ", "),
+    call. = FALSE
+  )
+}
 
 cat("All public inputs present in data-raw/.\n")

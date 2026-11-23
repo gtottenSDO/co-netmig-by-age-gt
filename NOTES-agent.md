@@ -579,6 +579,32 @@ span-comparison commit) were stripped from every commit with
 closed as superseded and PR #3 opened. Backup of the previous history:
 `internal/history-before-cleanup-2-2026-11-23.bundle`.
 
+## 2026-11-23 (night) — Second code review fixed; site published
+
+Owner: "lets go ahead and make these fixes and then render/push so the newest
+version goes live". All ten findings fixed:
+
+- Compare spans: at most nine saved spans (ten with the current one), the
+  number of palette colours; the button disables at the cap (tested in the
+  browser by adding nine spans).
+- `R/00`: downloads go to a `.part` file renamed on success; an empty file
+  counts as missing; missing CDPHE reports are fetched one by one. What failed:
+  `googledrive::drive_download()` fails when signed out ("Download failed.")
+  even though `drive_ls()` works, so the reports now come through
+  `https://drive.google.com/uc?export=download&id=<id>`. Tested by removing a
+  life table, emptying another and removing one report; a rerun restored all
+  three.
+- `R/01`: the open 90+ group's death rate weights the 89 and 90+ rates by the
+  statewide share of 89-year-olds at the start of the year; the 1999-2001
+  table, which ends at 109-110, gets its survivors at 110 added to 90+.
+  Published figures moved slightly; validation medians are unchanged to
+  within half a person.
+- `R/sdo-lookups.R`: retries each request (four tries) and checks the answer,
+  naming the URL on failure; county codes come from the Census county file
+  (sdotools is private, so the public repository cannot use its crosswalk).
+- `R/03` uses `census_dir`; `R/00` no longer hides `missing()` and pairs report
+  ids and paths in a table.
+
 ## Where to start next
 
 1. **Owner:** review and merge PR #3 (public inputs only, download script, SDO
