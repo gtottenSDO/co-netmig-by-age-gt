@@ -17,7 +17,7 @@
 #   netmig-annual-sya-2020-2025.csv  annual single-year rows for the dashboard's
 #                                    custom-span page
 #   co-netmig-by-age-wide.csv        county x five-year group, 2020-2025
-#   sdo-published-netmig-by-age.csv  SDO's earlier published figures, reference
+#   (sdo-published-netmig-by-age.csv is a fixed reference copy, not rebuilt)
 
 library(tidyverse)
 
@@ -233,31 +233,11 @@ comparison |>
 
 # ---- SDO's earlier published figures, for reference -------------------------
 
-# data.netmigrbyage is SDO's existing net migration by age. Its level and rate
-# columns are not consistent with each other, so it is used as a control
-# nowhere.
-db <- sdotools::sdo_db_connect(public = TRUE)
-withr::defer(DBI::dbDisconnect(db))
-
-dplyr::tbl(db, dbplyr::in_schema("data", "netmigrbyage")) |>
-  dplyr::select(
-    fips,
-    county,
-    agegroup,
-    netmig9500,
-    rate9500,
-    netmig0010,
-    rate0010,
-    netmig1020,
-    rate1020
-  ) |>
-  dplyr::collect() |>
-  dplyr::mutate(
-    countyfips = sprintf("08%03d", as.integer(fips)),
-    agegroup = as.integer(agegroup),
-    dplyr::across(dplyr::starts_with(c("netmig", "rate")), as.numeric)
-  ) |>
-  readr::write_csv(file.path(out_dir, "sdo-published-netmig-by-age.csv"))
+# output/sdo-published-netmig-by-age.csv is a fixed copy, taken on 2026-11-23,
+# of SDO's earlier published net migration by age (data.netmigrbyage), which
+# the public lookups service does not serve. It is used as a control nowhere:
+# its level and rate columns are not consistent with each other.
+stopifnot(file.exists(file.path(out_dir, "sdo-published-netmig-by-age.csv")))
 
 # ---- Report -----------------------------------------------------------------
 

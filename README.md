@@ -26,11 +26,13 @@ rows.
 
 | Path | Contents |
 |---|---|
+| `R/00-download-inputs.R` | Downloads the public inputs not served by the SDO lookups service into `data-raw/` |
+| `R/sdo-lookups.R` | Reads SDO population and components of change from the public lookups service |
 | `R/01-build-netmig-annual.R` | Annual residual by county, sex and single year of age, 1990–2025, with deaths estimated from public data |
 | `R/02-build-periods.R` | Sums the annual rows into periods and age groups; writes `output/` |
 | `R/03-compare-sdo-pep.R` | Check: SDO population and components against Census PEP vintage 2025 (writes to `output-internal/`) |
 | `R/04-check-outputs.R` | Guard: fails if `output/` carries county birth or death columns, if any file has recorded-count columns, or if `data/` holds a file not on its vetted list |
-| `data/` | Public inputs: statewide deaths by age band and births by sex, county mortality ratios, validation summary |
+| `data/` | County mortality ratios from CDPHE's public reports; summary of the internal check against recorded deaths |
 | `output/` | Published results (committed) |
 | `output-internal/` | Large or check-only intermediate files (not committed) |
 | `index.qmd`, `netmig-by-age.qmd`, `dashboard.qmd` | Landing page, report, dashboard |
@@ -48,6 +50,7 @@ rows.
 ## Running it
 
 ```sh
+Rscript R/00-download-inputs.R
 Rscript R/01-build-netmig-annual.R
 Rscript R/02-build-periods.R
 Rscript R/03-compare-sdo-pep.R   # check only
@@ -58,11 +61,12 @@ QUARTO_R="$(Rscript -e 'cat(R.home("bin"))')" quarto render
 The `QUARTO_R` override is needed because this machine has that variable set to
 a corrupted path; see `NOTES-agent.md`.
 
-`R/01` needs read access to the SDO database through `sdotools` (the public
-read-only account) and downloads CDPHE's public 2025 county reports into
-`data-raw/` on first run. `R/03` downloads the Census inputs the same way. The
-statewide files in `data/` are produced inside the State Demography Office from
-CDPHE vital records by a step that is not part of this repository.
+Everything runs from public sources with no account: `R/00` downloads the
+Census files, CDPHE's 2025 county reports and the NCHS life tables into
+`data-raw/`, and `R/01` and `R/03` read SDO population and components of change
+from the SDO lookups service (`https://gis.dola.colorado.gov/lookups`, the
+ColoradoDemography/MS_Demog_Lookups project). `output/sdo-published-netmig-by-age.csv`
+is a fixed reference copy that the service does not serve.
 
 ## Data and disclosure
 
@@ -73,20 +77,18 @@ the deaths back out (deaths = net migration − population change + births). So
 **everything published here is built from public data**, and county deaths by
 age are estimated:
 
-- statewide death rates by year, sex and age band (`data/state-deaths-by-band.csv`;
-  ages 2–14 pooled across sex and five-year blocks of years so that no band
-  rests on fewer than five deaths)
+- Colorado death rates by sex and single year of age from the NCHS life
+  tables (1999–2001, and annual for 2018–2023; interpolated in between)
 - times each county's mortality ratio for six broad bands, from CDPHE's public
   2025 county summary reports (`data/county-mortality-ratios-2025.csv`), pulled
   toward 1 when deaths are few
 - applied to the county's person-years and scaled to its published death total
   for each year.
 
-Births are each county-year's published total, split by sex with the statewide
-ratio. County totals are therefore exact; only the spread across ages is
+Births are each county-year's published total, split 105 boys to 100 girls. County totals are therefore exact; only the spread across ages is
 estimated. Against recorded deaths (checked internally;
 `data/modelled-deaths-validation.csv` holds the summary), broad age groups
-differ by a median of 6–7 people per county per decade and 5.5 for 2020–2025;
+differ by a median of 7 people per county per decade and 6 for 2020–2025;
 the largest differences are in the oldest groups of the largest counties,
 biggest in the 1990s. Owner's decisions, 2026-11-23: "Modelled from public
 data" and "we should change the compare to be on the same methodology".
@@ -95,9 +97,9 @@ data" and "we should change the compare to be on the same methodology".
 
 | Input | Source |
 |---|---|
-| Population by single year of age and sex, 1990–2025 | SDO `estimates.county_sya` (top age 90+ before 2010, so 90+ is used throughout) |
-| County births, deaths, net migration by year | SDO `estimates.components_change` |
-| Statewide deaths by age band, births by sex | `data/` (CDPHE, statewide aggregates) |
+| Population by single year of age and sex, 1990–2025 | SDO county estimates via the lookups service (top age 90+ before 2010, so 90+ is used throughout) |
+| County births, deaths, net migration by year | SDO components of change via the lookups service |
+| Colorado death rates by sex and age | NCHS life tables for Colorado, 1999–2001 and 2018–2023 |
 | County age pattern of deaths | CDPHE public 2025 county summary reports, Table 11 |
 
 Until 2026-11-23 the 2020–2025 period used the Census Vintage 2025 county
@@ -107,7 +109,7 @@ by under 0.03%, and SDO's 9,100 fewer children aged 0–4 in 2020 stay with the
 same people through 2025, so they cancel out of net migration.
 
 **1990 is the earliest possible start.** The SDO age-detailed population tables
-begin in 1990; `estimates.components_change` reaches back to 1970 but without
+begin in 1990; the components of change reach back to 1970 but without
 age detail.
 
 ## Results in brief

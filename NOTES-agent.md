@@ -539,13 +539,43 @@ before 2000 may) or if any county other than Rio Grande has no 2025 report;
 `R/02` and `R/03` no longer select rows with `[` or pair vectors by position.
 Outputs are unchanged.
 
+## 2026-11-23 (late) — Public inputs only, runnable from a fresh clone
+
+Owner asked whether `data/state-*.csv` was public ("Is it public data?"). It was
+not: statewide deaths by age band and births by sex tabulated from the
+restricted CDPHE records. Owner: "Replace with public data", then "can you
+create download scripts also for these so the public repo is runnable?" and
+"on the ColoradoDemography github there should be an API ... can you use this
+for pulling sdo data?".
+
+- Statewide death rates now come from the NCHS life tables for Colorado (males
+  and females, single year of age): the 1999-2001 decennial table
+  (`NVSR/60_09/lewk4_colorado.xlsx`; the PDF link on cdc.gov returns 403) and
+  annual tables for 2018-2023 (2018 files are named `Colorado-2-Male.xlsx`, not
+  `CO2.xlsx`). The 1989-91 table exists only as a scanned PDF and was not used;
+  before 2000 the 1999-2001 rates are used. Log rates are interpolated in time
+  between tables. Births are split 105:100 instead of by recorded sex ratio.
+- `R/00-download-inputs.R` fetches every file input; the CDPHE Drive folder is
+  read with `googledrive::drive_deauth()`, no sign-in.
+- `R/sdo-lookups.R` reads population and components from
+  `https://gis.dola.colorado.gov/lookups` (`/sya?choice=single`, `/components`),
+  which mirrors the database exactly (Adams 2025: 556,429; Broomfield's 2000
+  transfer and the 90+ top age before 2010 are the same). Its
+  `/component_county` endpoint hung, so county codes are fixed in the script.
+  `data.netmigrbyage` is not served, so `output/sdo-published-netmig-by-age.csv`
+  is now a fixed reference copy.
+- Cost against recorded deaths (broad groups, 2020-2025): median county cell
+  5.5 -> 6.3 people, 90th percentile 47 -> 61. Statewide and county totals are
+  unchanged.
+
 ## Where to start next
 
 1. **Owner:** review and merge PR #1 (span comparison and review fixes; `main`
    already carries the cleaned history and today's earlier work).
 2. Nothing is running; logs are in `logs/finished/`.
-3. To rebuild: inside SDO run `internal/01-prepare-vital-inputs.R` only when
-   the vital records change, then `R/01` to `R/04` and the render.
+3. To rebuild: `R/00` to `R/04`, then the render; no account or database
+   access is needed. Inside SDO, `internal/` re-runs the check against recorded
+   deaths.
 4. Never add recorded county deaths, anything computed from them below the
    state, or a named or maximum validation figure to a tracked file;
    `R/04-check-outputs.R` guards the data files but not prose.

@@ -24,8 +24,6 @@ proj_dir <- here::here()
 # Files in data/ that may be published, and why.
 vetted_data <- tibble::tribble(
   ~file                              , ~reason                                                  ,
-  "state-deaths-by-band.csv"         , "statewide only; every band at least five deaths"        ,
-  "state-births-by-sex.csv"          , "statewide only"                                         ,
   "county-mortality-ratios-2025.csv" , "county figures copied from CDPHE's public 2025 reports" ,
   "modelled-deaths-validation.csv"   , "medians and 90th percentiles only; no cells or maxima"
 )

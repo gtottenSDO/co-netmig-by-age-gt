@@ -24,9 +24,9 @@ jobs:
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
 
-      # No R is installed here on purpose. The data build needs the SDO database
-      # through the sdotools package, so chunk results are frozen locally and
-      # committed; Quarto renders from _freeze without executing R.
+      # No R is installed here on purpose. The data build (R/00-R/04) downloads
+      # public inputs and runs locally; chunk results are frozen and committed,
+      # so Quarto renders from _freeze without executing R.
       - name: Check freeze directory is present
         run: |
           if [ ! -d "_freeze" ]; then

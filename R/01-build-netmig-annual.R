@@ -11,23 +11,24 @@
 # grouping and custom span in this project is a sum of these rows (R/02).
 #
 # Inputs, all public:
-#   - population: SDO county single-year-of-age estimates
-#     (estimates.county_sya), ages 0-90+
+#   - population: SDO county single-year-of-age estimates, ages 0-90+
 #   - county births, deaths and net migration by year: SDO components of change
-#     (estimates.components_change)
-#   - statewide deaths by year, sex and age band, and statewide births by sex:
-#     data/state-deaths-by-band.csv and data/state-births-by-sex.csv
+#     (both from SDO's public lookups service; see R/sdo-lookups.R)
+#   - Colorado death rates by sex and single year of age: NCHS life tables,
+#     1999-2001 and 2018-2023
 #   - each county's own age pattern of deaths: CDPHE's public 2025 county
 #     summary reports (Table 11)
 #
 # County deaths by age are not public. Because population is public, any
 # published net migration by age built from recorded deaths would give those
 # deaths back (deaths = net migration - population change + births). Deaths
-# are therefore modelled: statewide rates by year, sex and age band, times the
-# county's mortality ratio for the broad band, times its person-years, scaled
+# are therefore modelled: Colorado life-table rates by year, sex and age, times
+# the county's mortality ratio for the broad band, times its person-years, scaled
 # so each county-year matches its published death total. Owner, 2026-11-23:
 # "Modelled from public data", and "we should change the compare to be on the
 # same methodology".
+#
+# Run R/00 first to download the public inputs.
 #
 # Output: output-internal/netmig-annual-sya-1990-2025.csv (not committed because
 # of its size; R/02 publishes what the site needs).
@@ -37,6 +38,7 @@ library(tidyverse)
 proj_dir <- here::here()
 data_dir <- file.path(proj_dir, "data")
 reports_dir <- file.path(proj_dir, "data-raw", "cdphe-county-reports-2025")
+life_tables_dir <- file.path(proj_dir, "data-raw", "nchs-life-tables")
 out_dir <- file.path(proj_dir, "output-internal")
 
 first_year <- 1990L
@@ -48,60 +50,44 @@ shrink_deaths <- 10 # deaths added to both sides of a county mortality ratio
 
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
-# ---- SDO population and components ------------------------------------------
+# ---- SDO population and components (public lookups service) ----------------
 
-db <- sdotools::sdo_db_connect(public = TRUE)
-withr::defer(DBI::dbDisconnect(db))
+source(file.path(proj_dir, "R", "sdo-lookups.R"))
 
 # Counties only; the state is rebuilt as their sum so it adds up exactly.
-pop <- dplyr::tbl(db, dbplyr::in_schema("estimates", "county_sya")) |>
-  dplyr::filter(
-    datatype == "Estimate",
-    countyfips != 0L,
-    year >= !!first_year,
-    year <= !!last_year
-  ) |>
-  dplyr::select(
-    countyfips,
-    county,
-    year,
-    age,
-    malepopulation,
-    femalepopulation
-  ) |>
-  dplyr::collect() |>
+pop <- sdo_get_sya(first_year:last_year) |>
+  dplyr::filter(datatype == "Estimate") |>
   tidyr::pivot_longer(
     c(malepopulation, femalepopulation),
     names_to = "sex",
     values_to = "pop"
   ) |>
   dplyr::transmute(
-    countyfips = sprintf("08%03d", as.integer(countyfips)),
+    countyfips = sprintf("08%03d", countyfips),
     county = stringr::str_remove(county, " County$"),
-    year = as.integer(year),
+    year,
     sex = dplyr::if_else(sex == "malepopulation", 1L, 2L),
-    age = pmin(as.integer(age), max_age),
-    pop = as.numeric(pop)
+    age = pmin(age, max_age),
+    pop
   ) |>
   dplyr::summarise(pop = sum(pop), .by = c(countyfips, county, year, sex, age))
 
 county_names <- pop |> dplyr::distinct(countyfips, county)
 
-controls <- dplyr::tbl(
-  db,
-  dbplyr::in_schema("estimates", "components_change")
-) |>
-  dplyr::filter(countyfips != 0L, year > !!first_year, year <= !!last_year) |>
-  dplyr::select(countyfips, year, births, deaths, netmig) |>
-  dplyr::collect() |>
+controls <- sdo_get_components((first_year + 1L):last_year) |>
+  dplyr::filter(datatype == "Estimate") |>
   dplyr::transmute(
-    countyfips = sprintf("08%03d", as.integer(countyfips)),
-    year = as.integer(year),
-    control_births = as.numeric(births),
-    control_deaths = as.numeric(deaths),
-    control_netmig = as.numeric(netmig)
+    countyfips = sprintf("08%03d", countyfips),
+    year,
+    control_births = births,
+    control_deaths = deaths,
+    control_netmig = netmig
   )
 
+stopifnot(
+  dplyr::n_distinct(pop$countyfips) == 64,
+  all(first_year:last_year %in% pop$year)
+)
 stopifnot(max(pop$age) == max_age)
 
 # ---- Annual population change by single year of age -------------------------
@@ -134,68 +120,107 @@ annual <- pop_end |>
     person_years = (pop_start + pop_end) / 2
   )
 
-# ---- Statewide death rates by band ------------------------------------------
+# ---- Colorado death rates by age and sex: NCHS life tables -----------------
 
-# Each band row covers a range of ages at the end of the year, a range of years
-# (one year, or five for the pooled child bands) and a sex (0 = both).
-state_bands <- readr::read_csv(
-  file.path(data_dir, "state-deaths-by-band.csv"),
-  col_types = readr::cols(.default = "i", deaths = "d")
-) |>
-  dplyr::mutate(band_id = dplyr::row_number())
-
-# Which band each county row falls in. Joined on overlapping ranges, so each
-# row matches exactly one band (checked below).
-row_band <- annual |>
-  dplyr::distinct(year, sex, age_end) |>
-  dplyr::inner_join(
-    state_bands |>
-      dplyr::select(
-        band_id,
-        year_from,
-        year_to,
-        band_sex = sex,
-        age_lo,
-        age_hi
-      ),
-    by = dplyr::join_by(
-      dplyr::between(year, year_from, year_to),
-      dplyr::between(age_end, age_lo, age_hi)
-    )
-  ) |>
-  dplyr::filter(band_sex == 0L | band_sex == sex) |>
-  dplyr::select(year, sex, age_end, band_id)
-
-stopifnot(
-  nrow(row_band) == nrow(dplyr::distinct(annual, year, sex, age_end))
+# NCHS publishes life tables for Colorado by sex and single year of age (to
+# 100+): the decennial 1999-2001 tables and annual tables for 2018-2023 (R/00
+# downloads them). The central death rate at each age is deaths over
+# person-years lived (dx / Lx); 90 and over are pooled to match the population.
+# Owner, 2026-11-23: "Replace with public data" for the statewide rates that
+# had been tabulated from restricted records.
+life_table_files <- tibble::tribble(
+  ~table_year , ~sex , ~file                      , ~sheet    ,
+  2000L       , 1L   , "2000-lewk4_colorado.xlsx" , "male6"   ,
+  2000L       , 2L   , "2000-lewk4_colorado.xlsx" , "female6" ,
+  2018L       , 1L   , "2018-CO2.xlsx"            , NA        ,
+  2018L       , 2L   , "2018-CO3.xlsx"            , NA        ,
+  2019L       , 1L   , "2019-CO2.xlsx"            , NA        ,
+  2019L       , 2L   , "2019-CO3.xlsx"            , NA        ,
+  2020L       , 1L   , "2020-CO2.xlsx"            , NA        ,
+  2020L       , 2L   , "2020-CO3.xlsx"            , NA        ,
+  2021L       , 1L   , "2021-CO2.xlsx"            , NA        ,
+  2021L       , 2L   , "2021-CO3.xlsx"            , NA        ,
+  2022L       , 1L   , "2022-CO2.xlsx"            , NA        ,
+  2022L       , 2L   , "2022-CO3.xlsx"            , NA        ,
+  2023L       , 1L   , "2023-CO2.xlsx"            , NA        ,
+  2023L       , 2L   , "2023-CO3.xlsx"            , NA
 )
 
-state_rates <- annual |>
-  dplyr::left_join(row_band, by = c("year", "sex", "age_end")) |>
-  dplyr::summarise(state_person_years = sum(person_years), .by = band_id) |>
-  dplyr::inner_join(
-    state_bands |> dplyr::select(band_id, deaths),
-    by = "band_id"
+life_tables <- life_table_files |>
+  purrr::pmap(\(table_year, sex, file, sheet) {
+    path <- file.path(life_tables_dir, file)
+    readxl::read_excel(
+      path,
+      sheet = if (is.na(sheet)) 1 else sheet,
+      col_names = c("age_label", "qx", "lx", "dx", "Lx", "Tx", "ex"),
+      col_types = "text"
+    ) |>
+      # Data rows start with the age, as in "0-1", "45–46" or "100 and older".
+      dplyr::filter(stringr::str_detect(age_label, "^\\d+")) |>
+      dplyr::transmute(
+        table_year,
+        sex,
+        age = as.integer(stringr::str_extract(age_label, "^\\d+")),
+        dx = as.numeric(dx),
+        Lx = as.numeric(Lx)
+      )
+  }) |>
+  purrr::list_rbind() |>
+  dplyr::mutate(age = pmin(age, max_age)) |>
+  dplyr::summarise(dx = sum(dx), Lx = sum(Lx), .by = c(table_year, sex, age)) |>
+  dplyr::mutate(log_m = log(dx / Lx))
+
+stopifnot(
+  nrow(life_tables) == nrow(life_table_files) * (max_age + 1L),
+  all(is.finite(life_tables$log_m))
+)
+
+# Rate for estimate year t (July t-1 to June t), centred on t - 0.5: the log
+# rate is interpolated linearly between the tables in time (the 1999-2001
+# table is centred on 2000) and held flat before the first and after the last.
+table_years <- sort(unique(life_tables$table_year))
+
+rates_by_year <- tidyr::expand_grid(
+  year = (first_year + 1L):last_year,
+  sex = 1:2,
+  age = 0L:max_age
+) |>
+  dplyr::left_join(
+    life_tables |>
+      dplyr::select(table_year, sex, age, log_m) |>
+      tidyr::nest(by_year = c(table_year, log_m)),
+    by = c("sex", "age")
   ) |>
-  dplyr::transmute(band_id, death_rate = deaths / state_person_years)
+  dplyr::mutate(
+    death_rate = purrr::map2_dbl(year, by_year, \(t, d) {
+      exp(stats::approx(d$table_year, d$log_m, xout = t - 0.5, rule = 2)$y)
+    })
+  ) |>
+  dplyr::select(year, sex, age, death_rate)
+
+# A cohort ending the year at age a lives it at ages a - 1 and a, half each;
+# newborns live it at age 0 only.
+state_rates <- rates_by_year |>
+  dplyr::left_join(
+    rates_by_year |>
+      dplyr::transmute(year, sex, age = age + 1L, rate_younger = death_rate),
+    by = c("year", "sex", "age")
+  ) |>
+  dplyr::transmute(
+    year,
+    sex,
+    age_end = age,
+    death_rate = dplyr::if_else(
+      is.na(rate_younger) | age == max_age,
+      death_rate,
+      (death_rate + rate_younger) / 2
+    )
+  )
 
 # ---- County mortality ratios from the public 2025 reports -------------------
 
-# data-raw/ is not committed, so the reports are fetched on first run from the
-# public folder linked on CDPHE's Vital Statistics Program page.
-if (length(list.files(reports_dir, pattern = "\\.xlsx$")) == 0) {
-  dir.create(reports_dir, showWarnings = FALSE, recursive = TRUE)
-  report_files <- googledrive::drive_ls(
-    googledrive::as_id("1dpS9IQJVXvW1bDnOvpDPlQ__fIewhg-X")
-  )
-  purrr::walk2(report_files$id, report_files$name, \(id, name) {
-    googledrive::drive_download(
-      googledrive::as_id(id),
-      path = file.path(reports_dir, name),
-      overwrite = TRUE
-    )
-  })
-}
+# The reports are downloaded by R/00.
+stopifnot(length(list.files(reports_dir, pattern = "\\.xlsx$")) >= 64)
 
 # Table 11 gives deaths and population by five-year group, sexes combined, for
 # calendar 2025; "." means one or two deaths and is counted as 1.5. Rows are
@@ -301,16 +326,11 @@ readr::write_csv(
 
 # ---- Modelled births and deaths, and the residual ---------------------------
 
-birth_sex_share <- readr::read_csv(
-  file.path(data_dir, "state-births-by-sex.csv"),
-  col_types = readr::cols(.default = "i", births = "d")
-) |>
-  dplyr::mutate(sex_share = births / sum(births), .by = year) |>
-  dplyr::select(year, sex, sex_share)
+# Births are split by sex with the conventional ratio of 105 boys to 100 girls.
+birth_sex_share <- tibble::tibble(sex = 1:2, sex_share = c(105, 100) / 205)
 
 annual <- annual |>
-  dplyr::left_join(row_band, by = c("year", "sex", "age_end")) |>
-  dplyr::left_join(state_rates, by = "band_id") |>
+  dplyr::left_join(state_rates, by = c("year", "sex", "age_end")) |>
   dplyr::mutate(
     mort_band = dplyr::case_when(
       age_end < 25L ~ "0-24",
@@ -326,7 +346,7 @@ annual <- annual |>
     by = c("countyfips", "mort_band")
   ) |>
   dplyr::left_join(controls, by = c("countyfips", "year")) |>
-  dplyr::left_join(birth_sex_share, by = c("year", "sex")) |>
+  dplyr::left_join(birth_sex_share, by = "sex") |>
   dplyr::mutate(
     mortality_ratio = tidyr::replace_na(mortality_ratio, 1),
     deaths_expected = death_rate * mortality_ratio * person_years
@@ -395,10 +415,6 @@ identity |>
   ) |>
   print(n = 40)
 
-cat(
-  "\n--- Smallest band death rates' underlying counts are in the input file ---\n"
-)
-cat("Bands:", nrow(state_bands), " min deaths:", min(state_bands$deaths), "\n")
 
 # ---- Write ------------------------------------------------------------------
 

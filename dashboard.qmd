@@ -1313,7 +1313,7 @@ the custom spans are all formed. All pages use the same method, so the
 County deaths by age are confidential, and because the population figures are
 public, net migration published by age would let anyone work them back out
 if it were built from recorded deaths. Deaths are therefore **estimated from
-public data**: statewide death rates by age, sex and year, adjusted by each
+public data**: Colorado death rates by age and sex from the NCHS life tables, adjusted by each
 county's own age pattern of deaths in CDPHE's public 2025 county summary
 reports, and scaled to the county's published death total for each year.
 County totals across all ages are unaffected. Against recorded deaths, the

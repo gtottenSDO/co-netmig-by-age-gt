@@ -27,4 +27,5 @@ entries of 2026-11-23.
 | 9 | History rewritten and force-pushed; no commit holds restricted-derived files | `git log` on `main`; backup bundle in `internal/` |
 | 14 | Span comparison tool on the Custom span page | `dashboard.qmd`; checked in the browser |
 | 15 | Code-review fixes (guard, checks, R style) | `R/01`-`R/04`; guard tested with planted files |
+| 16 | Statewide inputs replaced with NCHS life tables; download script; SDO data via the public lookups service | `R/00-download-inputs.R`, `R/sdo-lookups.R`; fresh-clone run |
 | 12 | Broomfield 1990-2000 caveat marked | `caveat` column; dashboard note; report caveats |

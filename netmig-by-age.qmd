@@ -21,7 +21,7 @@ execute:
 library(tidyverse)
 library(gt)
 library(scales)
-library(sdotools)
+library(sdotools) # theme_sdo() and the SDO colour scales
 
 # Signed labels read better than a bare minus sign on a diverging chart.
 lbl_signed <- function(x) {
@@ -118,9 +118,9 @@ groups (0–17, 18–24, 25–44, 45–64, 65+).
 
 | Input | Source |
 |---|---|
-| Population by single year of age and sex, 1990–2025 | SDO county estimates (`estimates.county_sya`), ages 0 to 90-and-over |
-| County births, deaths and net migration by year | SDO components of change (`estimates.components_change`) |
-| Statewide deaths by year, sex and age band; statewide births by sex | CDPHE vital statistics, statewide only (`data/state-*.csv`) |
+| Population by single year of age and sex, 1990–2025 | SDO county estimates, ages 0 to 90-and-over (SDO public lookups service) |
+| County births, deaths and net migration by year | SDO components of change (SDO public lookups service) |
+| Colorado death rates by sex and single year of age | NCHS life tables for Colorado, 1999–2001 and 2018–2023 |
 | Each county's age pattern of deaths | CDPHE public 2025 county summary reports, Table 11 |
 
 The SDO single-year estimates top out at an open 90-and-over group before 2010,
@@ -133,9 +133,10 @@ migration by age published from recorded deaths would let anyone work those
 deaths back out: deaths = net migration − population change + births. County
 deaths by age are therefore **estimated from public data**:
 
-1. Statewide death rates by year, sex and age band (0, 1, 2–4, five-year bands
-   to 85–89, and 90+; ages 2–14 pooled across sex and five-year blocks of
-   years so that no band rests on fewer than five deaths).
+1. Colorado death rates by sex and single year of age from the NCHS life
+   tables, interpolated between the 1999–2001 table and the annual tables for
+   2018–2023 (the 1999–2001 rates are used before 2000 and the 2023 rates
+   after 2023).
 2. Multiplied by the county's own mortality ratio for six broad bands, from
    CDPHE's public 2025 county reports: the county's 2025 deaths in the band
    divided by what statewide rates would give it, pulled toward 1 by adding ten
@@ -143,8 +144,8 @@ deaths by age are therefore **estimated from public data**:
 3. Applied to the county's person-years and scaled so that each county-year
    matches its published death total.
 
-Births are each county-year's published total, split by sex using that year's
-statewide sex ratio at birth. Deaths at age *x* in a year are split half to
+Births are each county-year's published total, split by sex with the
+conventional ratio of 105 boys to 100 girls. Deaths at age *x* in a year are split half to
 the people who were already *x* when the year began and half to those who
 turned *x* during it.
 
@@ -582,7 +583,7 @@ migration, because that is the term being solved for, and matters most in
 small counties.
 
 **County deaths by age are estimated.** County totals are exact, but the
-spread of deaths across ages comes from statewide rates and one year (2025) of
+spread of deaths across ages comes from Colorado life tables and one year (2025) of
 county mortality patterns; see Validation. Rio Grande has no 2025 report and
 uses the statewide pattern.
 
@@ -597,8 +598,8 @@ period is drawn from an open-ended group with very high mortality, so what
 remains is small and its residual depends as much on the death estimates as on
 anyone moving.
 
-**Sex detail is noisier than the totals.** Births are split by the statewide
-sex ratio, and the residual magnifies small differences in sex composition, so
+**Sex detail is noisier than the totals.** Births are split by a fixed sex
+ratio, and the residual magnifies small differences in sex composition, so
 individual cells by sex should not be read closely.
 
 **Group quarters drive some of the sharpest patterns.** Prisons in Bent,
