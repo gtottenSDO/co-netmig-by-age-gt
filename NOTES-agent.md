@@ -607,8 +607,8 @@ version goes live". All ten findings fixed:
 
 ## Where to start next
 
-1. **Owner:** review and merge PR #3 (public inputs only, download script, SDO
-   lookups service, span comparison, review fixes).
+1. Nothing awaits review: PR #3 was merged by the owner (`main` at d6999f4) and
+   the site deployed; the live dashboard serves the span comparison.
 2. Nothing is running; logs are in `logs/finished/`.
 3. To rebuild: `R/00` to `R/04`, then the render; no account or database
    access is needed. Inside SDO, `internal/` re-runs the check against recorded

@@ -5,7 +5,6 @@
 ### Awaiting owner decision
 | # | Item | Next step | Who |
 |---|---|---|---|
-| 8 | PR #3: public inputs, download script, lookups service, span comparison, review fixes | Review and merge (merge commit) | owner |
 | 13 | `internal/` exists only on this machine | Copy to a private repository or the shared drive | owner |
 
 ### Deferred
@@ -27,5 +26,6 @@ entries of 2026-11-23.
 | 9 | History rewritten twice and force-pushed; no commit holds restricted-derived files, including the statewide tabulations | `git log` on `main`; backup bundle in `internal/` |
 | 14 | Span comparison tool on the Custom span page | `dashboard.qmd`; checked in the browser |
 | 15 | Code-review fixes (guard, checks, R style) | `R/01`-`R/04`; guard tested with planted files |
+| 8 | PR #3 merged and the site deployed | `main` at d6999f4; live dashboard checked |
 | 16 | Statewide inputs replaced with NCHS life tables; download script; SDO data via the public lookups service | `R/00-download-inputs.R`, `R/sdo-lookups.R`; fresh-clone run |
 | 12 | Broomfield 1990-2000 caveat marked | `caveat` column; dashboard note; report caveats |
