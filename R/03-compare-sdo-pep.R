@@ -25,9 +25,13 @@ years <- 2020:2025
 # data-raw/ is not committed, so the two Census files are fetched on first run.
 census_url <- "https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/counties"
 dir.create(raw_dir, showWarnings = FALSE, recursive = TRUE)
-purrr::walk2(
-  c("asrh/cc-est2025-agesex-08.csv", "totals/co-est2025-alldata.csv"),
-  c("cc-est2025-agesex-08.csv", "co-est2025-alldata.csv"),
+census_files <- tibble::tribble(
+  ~remote                         , ~local                     ,
+  "asrh/cc-est2025-agesex-08.csv" , "cc-est2025-agesex-08.csv" ,
+  "totals/co-est2025-alldata.csv" , "co-est2025-alldata.csv"
+)
+purrr::pwalk(
+  census_files,
   \(remote, local) {
     dest <- file.path(raw_dir, local)
     if (!file.exists(dest)) {
@@ -232,13 +236,20 @@ totals |>
   print()
 
 cat("\n--- Counties: absolute % difference in total population, by year ---\n")
-totals |>
-  dplyr::filter(countyfips != "08000") |>
-  dplyr::summarise(
-    median_abs_pct = median(abs(pct_diff)),
-    max_abs_pct = max(abs(pct_diff)),
-    county_at_max = county[which.max(abs(pct_diff))],
-    .by = year
+county_totals <- totals |> dplyr::filter(countyfips != "08000")
+
+# The median by year, joined to the county furthest apart in that year.
+county_totals |>
+  dplyr::summarise(median_abs_pct = median(abs(pct_diff)), .by = year) |>
+  dplyr::left_join(
+    county_totals |>
+      dplyr::slice_max(abs(pct_diff), n = 1, by = year, with_ties = FALSE) |>
+      dplyr::transmute(
+        year,
+        max_abs_pct = abs(pct_diff),
+        county_at_max = county
+      ),
+    by = "year"
   ) |>
   print()
 

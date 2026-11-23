@@ -500,14 +500,54 @@ from recorded deaths, the calibration files with CDPHE county totals, and the
 internal paths. Removing them needs a history rewrite and force-push; that is
 the owner's call (TODO 9).
 
+## 2026-11-23 (evening) — History rewritten; span comparison; review fixes
+
+**History.** Owner: "can you do the history cleanup and force push while the
+code review runs on the pr?" and, on where main should point, "Clean content
+now (Recommended)". Before rewriting, the review found that this file named the
+county cell with the largest estimated-against-recorded difference, and an
+earlier entry quoted recorded-death net migration for named counties; either
+gives a recorded death count back (exactly, or to two values) once combined
+with public population and births. Those figures moved to the internal notes,
+and the published validation summary dropped its maxima. Every commit was then
+rewritten with `git filter-branch` to strip `output/`, `data/`, `R/`, the notes,
+README, task list, report source, rendered report and workflow, and one final
+commit restores today's clean files; `main` and the PR branch both point at it
+and were force-pushed (lease checked against the old heads). A local backup of
+the old history is in `internal/` (gitignored). GitHub may keep the old commits
+reachable by their hashes until it collects them; GitHub Support can purge them.
+
+What went wrong: `git filter-branch` also removed the stripped files from the
+working tree, which looked like a deletion; `git checkout -- .` restored them
+from the new commit.
+
+**Span comparison.** Owner: "in the custom periods - can we add a comparison
+period tool? maybe just if one is created we can add/save it and add another?"
+The Custom span page has "Add this span to the comparison" and "Clear" buttons
+and a "Compare spans" tab showing the first area across the saved spans plus
+the current one. The buttons rendered as blank dark boxes: Quarto gives Observable
+Inputs buttons `btn btn-quarto` with dark text on a dark fill, set with priority
+over a plain `.sidebar form button` rule; it took `!important` (and Bootstrap's
+`--bs-btn-*` variables) in `dashboard-netmig.css`.
+
+**Review fixes** (owner: "if the fixes from the code-review haven't been
+implemented please do that also"): `R/04` now catches any county column named
+with "death" or "birth", admits `data/` files only from a vetted list, and
+rejects maxima in the validation summary (tested by planting two files);
+`R/01` stops if a county-year with people lacks components (only Broomfield
+before 2000 may) or if any county other than Rio Grande has no 2025 report;
+`R/02` and `R/03` no longer select rows with `[` or pair vectors by position.
+Outputs are unchanged.
+
 ## Where to start next
 
-1. **Owner:** decide whether to rewrite the repository history to remove the
-   earlier files and references (TODO 9). It is a force-push to a public
-   repository; copies already fetched or forked are not affected.
-2. **Owner:** review and merge today's pull request.
-3. Nothing is running; logs are in `logs/finished/`.
-4. To rebuild: inside SDO run `internal/01-prepare-vital-inputs.R` only when
+1. **Owner:** review and merge PR #1 (span comparison and review fixes; `main`
+   already carries the cleaned history and today's earlier work).
+2. Nothing is running; logs are in `logs/finished/`.
+3. To rebuild: inside SDO run `internal/01-prepare-vital-inputs.R` only when
    the vital records change, then `R/01` to `R/04` and the render.
-5. Do not add recorded county deaths, or anything computed from them below
-   the state level, to `output/` or `data/`; `R/04-check-outputs.R` guards it.
+4. Never add recorded county deaths, anything computed from them below the
+   state, or a named or maximum validation figure to a tracked file;
+   `R/04-check-outputs.R` guards the data files but not prose.
+5. `internal/` exists only on this machine; copy it to a private repository or
+   the shared drive.

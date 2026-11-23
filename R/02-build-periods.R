@@ -93,26 +93,40 @@ grouped <- dplyr::cross_join(
     by = dplyr::join_by(grouping, closest(age_at_end >= age_lo))
   )
 
+group_keys <- c(
+  "period",
+  "years",
+  "grouping",
+  "countyfips",
+  "county",
+  "sex",
+  "age_group",
+  "age_order"
+)
+
+# Population at the two ends of the period, for the same people: the start
+# population comes from the first year's rows, the end from the last year's.
+pop_start_by_group <- grouped |>
+  dplyr::filter(year == start_year + 1L) |>
+  dplyr::summarise(pop_start = sum(pop_start), .by = dplyr::all_of(group_keys))
+
+pop_end_by_group <- grouped |>
+  dplyr::filter(year == end_year) |>
+  dplyr::summarise(pop_end = sum(pop_end), .by = dplyr::all_of(group_keys))
+
 by_sex <- grouped |>
   dplyr::summarise(
     person_years = sum(person_years),
     births = sum(births),
     deaths = sum(deaths),
     netmig = sum(netmig),
-    # Population at the two ends of the period, for the same people.
-    pop_start = sum(pop_start[year == start_year + 1L]),
-    pop_end = sum(pop_end[year == end_year]),
-    .by = c(
-      period,
-      years,
-      grouping,
-      countyfips,
-      county,
-      sex,
-      age_group,
-      age_order
-    )
-  )
+    .by = dplyr::all_of(group_keys)
+  ) |>
+  dplyr::left_join(pop_start_by_group, by = group_keys) |>
+  dplyr::left_join(pop_end_by_group, by = group_keys) |>
+  dplyr::mutate(dplyr::across(c(pop_start, pop_end), \(x) {
+    tidyr::replace_na(x, 0)
+  }))
 
 comparison <- by_sex |>
   dplyr::bind_rows(

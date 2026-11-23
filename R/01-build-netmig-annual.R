@@ -267,7 +267,8 @@ county_mortality <- report_rows |>
     .by = c(area, mort_band)
   ) |>
   dplyr::mutate(
-    mortality_ratio = (report_deaths + shrink_deaths) / (expected_deaths + shrink_deaths)
+    mortality_ratio = (report_deaths + shrink_deaths) /
+      (expected_deaths + shrink_deaths)
   ) |>
   dplyr::inner_join(county_names, by = c("area" = "county")) |>
   dplyr::select(
@@ -278,7 +279,20 @@ county_mortality <- report_rows |>
     mortality_ratio
   )
 
-stopifnot(dplyr::n_distinct(county_mortality$countyfips) >= 63)
+# Every county except Rio Grande (08105, no report published) must match a
+# report by name; a renamed file would otherwise fall back to the state pattern
+# without warning.
+unmatched_counties <- setdiff(
+  county_names$countyfips,
+  c(county_mortality$countyfips, "08105")
+)
+if (length(unmatched_counties) > 0) {
+  stop(
+    "No 2025 county report matched: ",
+    paste(unmatched_counties, collapse = ", "),
+    call. = FALSE
+  )
+}
 
 readr::write_csv(
   county_mortality,
@@ -339,6 +353,24 @@ annual <- annual |>
   )
 
 # ---- Checks -----------------------------------------------------------------
+
+# A county-year with people but no published components gets zero births and
+# deaths, so its whole natural change would land in net migration. The only
+# expected case is Broomfield before it was created (no components until 2000).
+missing_controls <- annual |>
+  dplyr::summarise(
+    person_years = sum(person_years),
+    has_controls = !all(is.na(control_deaths)),
+    .by = c(countyfips, year)
+  ) |>
+  dplyr::filter(person_years > 0, !has_controls)
+
+cat("\n--- County-years with people but no published components ---\n")
+print(missing_controls)
+
+stopifnot(all(
+  missing_controls$countyfips == "08014" & missing_controls$year < 2000L
+))
 
 # The residual adds back to population change less natural increase. Where
 # SDO's population and components agree, that is SDO's net migration; the gap

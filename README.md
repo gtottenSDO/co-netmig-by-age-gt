@@ -29,7 +29,7 @@ rows.
 | `R/01-build-netmig-annual.R` | Annual residual by county, sex and single year of age, 1990–2025, with deaths estimated from public data |
 | `R/02-build-periods.R` | Sums the annual rows into periods and age groups; writes `output/` |
 | `R/03-compare-sdo-pep.R` | Check: SDO population and components against Census PEP vintage 2025 (writes to `output-internal/`) |
-| `R/04-check-outputs.R` | Guard: fails if anything in `output/` or `data/` carries county birth or death counts or recorded-count columns |
+| `R/04-check-outputs.R` | Guard: fails if `output/` carries county birth or death columns, if any file has recorded-count columns, or if `data/` holds a file not on its vetted list |
 | `data/` | Public inputs: statewide deaths by age band and births by sex, county mortality ratios, validation summary |
 | `output/` | Published results (committed) |
 | `output-internal/` | Large or check-only intermediate files (not committed) |
@@ -41,7 +41,7 @@ rows.
 | File | Contents |
 |---|---|
 | `netmig-comparison.csv` | Period × age grouping (`five`, `broad`) × area × sex × age group: population at start and end, average population, net migration, annual level and rate per 1,000; births and deaths for the state only; a `caveat` column for rows affected by the Broomfield boundary change |
-| `netmig-annual-sya-2020-2025.csv` | County × sex × estimate year × single year of age, 2021–2025; the dashboard's Custom span page sums it into any span and grouping |
+| `netmig-annual-sya-2020-2025.csv` | County × sex × estimate year × single year of age, 2021–2025; the dashboard's Custom span page sums it into any span and grouping, and can save spans to compare side by side |
 | `co-netmig-by-age-wide.csv` | County × five-year age group, 2020–2025, for spreadsheets |
 | `sdo-published-netmig-by-age.csv` | SDO's earlier published net migration by age, for reference only |
 
