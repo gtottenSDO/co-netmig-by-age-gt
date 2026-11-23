@@ -1,0 +1,607 @@
+---
+title: "Net Migration by Age, Colorado and Counties"
+subtitle: "July 1, 1990 to July 1, 2025"
+author: "Colorado State Demography Office"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 9
+    fig-height: 6
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+
+library(tidyverse)
+library(gt)
+library(scales)
+library(sdotools)
+
+# Signed labels read better than a bare minus sign on a diverging chart.
+lbl_signed <- function(x) {
+  paste0(dplyr::if_else(x >= 0, "+", "−"), scales::comma(abs(round(x))))
+}
+
+# Signed number for inline text, with a chosen number of decimals.
+fmt_signed <- function(x, digits = 0) {
+  paste0(
+    dplyr::if_else(x >= 0, "+", "−"),
+    scales::comma(abs(x), accuracy = 10^-digits)
+  )
+}
+
+source_caption <- stringr::str_wrap(
+  paste(
+    "Source: SDO county single-year-of-age estimates and components of change;",
+    "deaths by age estimated from CDPHE public statistics."
+  ),
+  110
+)
+
+# Every published figure: period x grouping x area x sex x age group.
+comparison <- readr::read_csv(
+  here::here("output", "netmig-comparison.csv"),
+  col_types = readr::cols(countyfips = "c", caveat = "c")
+) |>
+  dplyr::filter(sex_label == "Total")
+
+five <- comparison |>
+  dplyr::filter(grouping == "five") |>
+  dplyr::mutate(age_group = forcats::fct_reorder(age_group, age_order))
+
+broad <- comparison |>
+  dplyr::filter(grouping == "broad") |>
+  dplyr::mutate(age_group = forcats::fct_reorder(age_group, age_order))
+
+# One value from the five-year table, for inline text.
+v5 <- function(county_name, period_name, group, col = "netmig") {
+  five |>
+    dplyr::filter(
+      county == county_name,
+      period == period_name,
+      age_group == group
+    ) |>
+    dplyr::pull(.data[[col]])
+}
+
+state_now <- five |> dplyr::filter(countyfips == "08000", period == "2020-2025")
+counties_now <- five |> dplyr::filter(countyfips != "08000", period == "2020-2025")
+
+county_totals <- counties_now |>
+  dplyr::summarise(netmig = sum(netmig), .by = county)
+
+total_of <- function(county_name) {
+  county_totals |> dplyr::filter(county == county_name) |> dplyr::pull(netmig)
+}
+
+validation <- readr::read_csv(
+  here::here("data", "modelled-deaths-validation.csv"),
+  show_col_types = FALSE
+)
+```
+
+## What this estimates
+
+The Census Bureau and the State Demography Office publish county population by
+age and county net migration in total, but not **net migration by age**. This
+analysis recovers it as a demographic residual: for a group of people followed
+through time, net migration is what remains of their population change once
+births and deaths are taken out.
+
+$$
+\text{NM} = \text{Pop}_\text{end} - \text{Pop}_\text{start} - \text{Births} + \text{Deaths}
+$$
+
+The residual is formed **one estimate year at a time, by single year of age**,
+for every county and sex from July 1990 to July 2025. A one-year cohort is the
+group of people of one age on July 1 of one year, followed to July 1 of the
+next. Adding up the one-year results for the same people gives exactly their
+net migration over a longer period, because the intermediate populations cancel.
+Every period, age grouping and custom span in this project is formed that way.
+
+::: {.callout-note}
+## Reading the age labels
+Age groups are **age at the end of the period**. "25–29" in 2020–2025 means the
+people who were 25–29 on July 1, 2025, who were 20–24 five years earlier.
+Children born during a period appear in the youngest groups at its end. Two
+groupings are used: eighteen five-year groups (0–4 to 85+) and five broad
+groups (0–17, 18–24, 25–44, 45–64, 65+).
+:::
+
+### Where the numbers come from
+
+| Input | Source |
+|---|---|
+| Population by single year of age and sex, 1990–2025 | SDO county estimates (`estimates.county_sya`), ages 0 to 90-and-over |
+| County births, deaths and net migration by year | SDO components of change (`estimates.components_change`) |
+| Statewide deaths by year, sex and age band; statewide births by sex | CDPHE vital statistics, statewide only (`data/state-*.csv`) |
+| Each county's age pattern of deaths | CDPHE public 2025 county summary reports, Table 11 |
+
+The SDO single-year estimates top out at an open 90-and-over group before 2010,
+so 90+ is the top age in every year.
+
+### Why deaths are estimated, and how
+
+County deaths by age are confidential. Population by age is public, so net
+migration by age published from recorded deaths would let anyone work those
+deaths back out: deaths = net migration − population change + births. County
+deaths by age are therefore **estimated from public data**:
+
+1. Statewide death rates by year, sex and age band (0, 1, 2–4, five-year bands
+   to 85–89, and 90+; ages 2–14 pooled across sex and five-year blocks of
+   years so that no band rests on fewer than five deaths).
+2. Multiplied by the county's own mortality ratio for six broad bands, from
+   CDPHE's public 2025 county reports: the county's 2025 deaths in the band
+   divided by what statewide rates would give it, pulled toward 1 by adding ten
+   deaths to both sides so that a band with few deaths cannot swing far.
+3. Applied to the county's person-years and scaled so that each county-year
+   matches its published death total.
+
+Births are each county-year's published total, split by sex using that year's
+statewide sex ratio at birth. Deaths at age *x* in a year are split half to
+the people who were already *x* when the year began and half to those who
+turned *x* during it.
+
+## Validation
+
+```{r}
+#| label: identity
+
+# For the state, population at the start of a period summed over the groups
+# is the whole population at the start, so the identity can be checked here.
+identity <- five |>
+  dplyr::filter(countyfips == "08000") |>
+  dplyr::summarise(
+    pop_change = sum(pop_end) - sum(pop_start),
+    births = sum(births),
+    deaths = sum(deaths),
+    netmig = sum(netmig),
+    .by = period
+  ) |>
+  dplyr::mutate(gap = pop_change - births + deaths - netmig)
+
+v_25 <- validation |> dplyr::filter(period == "2020-2025", grouping == "broad")
+v_short <- validation |> dplyr::filter(period == "2024-2025", grouping == "broad")
+```
+
+**The identity closes.** For every period, statewide population change less
+births plus deaths equals net migration summed across ages (largest gap
+`r scales::comma(max(abs(identity$gap)), accuracy = 0.1)` people, from
+rounding). By county and year, net migration summed across ages equals SDO's
+published net migration exactly from 1992 on. The two SDO tables disagree by
+up to 858 people in a county in 1991, the first year after the 1990 census
+base, and by rounding of 10–20 people in 2001–2020; those gaps land in net
+migration and are left visible rather than forced away.
+
+**Estimated deaths against recorded deaths.** Recorded deaths, scaled to the
+same county totals, were run through the same calculation inside the State
+Demography Office, and only summary statistics are published here. The two
+versions agree on every county's total; they differ only in how deaths are
+spread across ages.
+
+```{r}
+#| label: tbl-validation
+#| tbl-cap: "Net migration from estimated deaths against recorded deaths, county by age-group cells"
+
+validation |>
+  dplyr::mutate(
+    grouping = dplyr::if_else(grouping == "five", "Five-year groups", "Broad groups")
+  ) |>
+  dplyr::select(
+    Period = period,
+    Grouping = grouping,
+    Cells = cells,
+    `Median difference (people)` = median_abs_diff,
+    `90th percentile (people)` = p90_abs_diff,
+    `Median difference (per 1,000 a year)` = median_abs_rate_diff
+  ) |>
+  gt::gt() |>
+  gt::fmt_number(columns = tidyselect::where(is.numeric), decimals = 1) |>
+  gt::fmt_number(columns = Cells, decimals = 0) |>
+  gt::tab_options(table.font.size = gt::pct(88))
+```
+
+For 2020–2025 in broad groups the median county-group differs by
+`r v_25$median_abs_diff` people and 90% by under
+`r round(v_25$p90_abs_diff)`; for a one-year span (2024–2025) the median is
+`r v_short$median_abs_diff`. The largest differences are in the oldest groups
+of large counties, and they are biggest in 1990–2000, because the county
+mortality ratios come from 2025 and county mortality patterns then differed
+more from today's.
+
+## Statewide pattern, 2020–2025
+
+```{r}
+#| label: fig-state-age-profile
+#| fig-cap: "Colorado net migration by age, 7/1/2020 to 7/1/2025"
+#| fig-alt: !expr paste0("Horizontal diverging bar chart of Colorado net migration by five-year age group in 2025. Bars are modestly positive for children, largest for ages 25-29 at ", lbl_signed(v5("Colorado", "2020-2025", "25-29")), ", positive through 40-44, and negative from 45-49 through 80-84.")
+#| fig-width: 9
+#| fig-height: 7
+
+state_now |>
+  dplyr::mutate(
+    age_group = forcats::fct_rev(age_group),
+    sign_grp = factor(
+      dplyr::if_else(netmig >= 0, "Net gain", "Net loss"),
+      levels = c("Net loss", "Net gain")
+    )
+  ) |>
+  ggplot(aes(x = netmig, y = age_group, fill = sign_grp)) +
+  geom_col(width = 0.72) +
+  geom_vline(xintercept = 0, colour = "grey30", linewidth = 0.4) +
+  geom_text(
+    aes(
+      label = lbl_signed(netmig),
+      hjust = dplyr::if_else(netmig >= 0, -0.12, 1.12)
+    ),
+    size = 3.1,
+    colour = "grey20"
+  ) +
+  scale_fill_sdo_discrete(drop = FALSE) +
+  scale_x_continuous(
+    labels = scales::label_comma(style_positive = "plus"),
+    expand = expansion(mult = 0.20)
+  ) +
+  labs(
+    title = "Colorado's net in-migration is concentrated among young adults",
+    subtitle = "Net migration 2020-2025, by age in 2025",
+    x = "Net migration",
+    y = NULL,
+    fill = NULL,
+    caption = source_caption
+  ) +
+  theme_sdo() +
+  theme(legend.position = "top", panel.grid.major.y = element_blank())
+```
+
+```{r}
+#| label: tbl-state-broad
+#| tbl-cap: "Colorado net migration by broad age group, 2020-2025"
+
+broad |>
+  dplyr::filter(countyfips == "08000", period == "2020-2025") |>
+  dplyr::arrange(age_group) |>
+  dplyr::transmute(
+    `Age in 2025` = as.character(age_group),
+    `Population 2020` = pop_start,
+    `Population 2025` = pop_end,
+    Births = births,
+    Deaths = deaths,
+    `Net migration` = netmig,
+    `Per 1,000 a year` = rate_per_1000
+  ) |>
+  gt::gt() |>
+  gt::fmt_number(columns = c(`Population 2020`:`Net migration`), decimals = 0) |>
+  gt::fmt_number(columns = `Per 1,000 a year`, decimals = 1) |>
+  gt::tab_footnote("Population 2020 is the same people five years earlier; those born since have none.")
+```
+
+Colorado's migration is overwhelmingly a young-adult story. The people aged
+25–29 in 2025 added `r scales::comma(v5("Colorado", "2020-2025", "25-29"))`
+over the five years, more than half of the state's net migration of
+`r scales::comma(sum(state_now$netmig))`, and the 30–34 and 20–24 groups added
+another `r scales::comma(v5("Colorado", "2020-2025", "30-34"))` and
+`r scales::comma(v5("Colorado", "2020-2025", "20-24"))`. From 45–49 to 80–84
+every group is negative, with the steadiest losses in the pre-retirement and
+early-retirement years.
+
+## County patterns, 2020–2025
+
+```{r}
+#| label: fig-county-small-multiples
+#| fig-cap: "Net migration age profiles for selected counties, 2020 to 2025"
+#| fig-alt: "Grid of eight bar charts, one per county (Weld, Douglas, Adams, Larimer, Denver, Boulder, Jefferson, Eagle), each showing net migration by age in 2025. Weld and Douglas gain across most ages. Adams and Larimer gain mainly among young adults. Denver and Boulder show a sharp young-adult spike followed by losses at older ages. Jefferson and Eagle lose at most ages."
+#| fig-width: 11
+#| fig-height: 6.5
+
+focus_counties <- c(
+  "Weld",
+  "Douglas",
+  "Adams",
+  "Larimer",
+  "Denver",
+  "Boulder",
+  "Jefferson",
+  "Eagle"
+)
+
+counties_now |>
+  dplyr::filter(county %in% focus_counties) |>
+  dplyr::mutate(
+    county = factor(county, levels = focus_counties),
+    sign_grp = factor(
+      dplyr::if_else(netmig >= 0, "Net gain", "Net loss"),
+      levels = c("Net loss", "Net gain")
+    )
+  ) |>
+  ggplot(aes(x = age_group, y = netmig, fill = sign_grp)) +
+  geom_col(width = 0.75) +
+  geom_hline(yintercept = 0, colour = "grey30", linewidth = 0.4) +
+  facet_wrap(~county, ncol = 4, scales = "free_y") +
+  scale_fill_sdo_discrete(drop = FALSE) +
+  scale_y_continuous(labels = scales::label_comma(style_positive = "plus")) +
+  labs(
+    title = "Net migration age profiles vary sharply across counties",
+    subtitle = "Vertical scales differ by county so that each pattern's shape is visible",
+    x = "Age in 2025",
+    y = "Net migration",
+    fill = NULL,
+    caption = source_caption
+  ) +
+  theme_sdo_bare() +
+  theme(
+    legend.position = "top",
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6.5),
+    strip.text = element_text(face = "bold")
+  )
+```
+
+```{r}
+#| label: fig-county-ranking
+#| fig-cap: "Total net migration by county, 2020 to 2025"
+#| fig-alt: !expr paste0("Horizontal lollipop chart ranking the 64 counties by total net migration from 2020 to 2025. Weld at ", lbl_signed(total_of("Weld")), " and Douglas at ", lbl_signed(total_of("Douglas")), " lead; Jefferson at ", lbl_signed(total_of("Jefferson")), " and Boulder at ", lbl_signed(total_of("Boulder")), " are the largest net losers.")
+#| fig-width: 9
+#| fig-height: 12
+
+county_totals |>
+  dplyr::mutate(
+    sign_grp = factor(
+      dplyr::if_else(netmig >= 0, "Net gain", "Net loss"),
+      levels = c("Net loss", "Net gain")
+    ),
+    county = forcats::fct_reorder(county, netmig)
+  ) |>
+  ggplot(aes(x = netmig, y = county, colour = sign_grp)) +
+  geom_segment(aes(x = 0, xend = netmig, yend = county), linewidth = 0.6) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0, colour = "grey30", linewidth = 0.4) +
+  scale_colour_sdo_discrete(drop = FALSE) +
+  scale_x_continuous(
+    labels = scales::label_comma(style_positive = "plus"),
+    expand = expansion(mult = 0.08)
+  ) +
+  labs(
+    title = "Weld and Douglas counties led Colorado's net in-migration",
+    subtitle = paste0("Statewide total: ", lbl_signed(sum(state_now$netmig))),
+    x = "Total net migration",
+    y = NULL,
+    colour = NULL,
+    caption = source_caption
+  ) +
+  theme_sdo() +
+  theme(
+    legend.position = "top",
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_text(size = 7)
+  )
+```
+
+```{r}
+#| label: tbl-county-broad
+#| tbl-cap: "Net migration by county and broad age group, 2020-2025"
+
+broad |>
+  dplyr::filter(countyfips != "08000", period == "2020-2025") |>
+  dplyr::select(county, age_group, netmig) |>
+  dplyr::arrange(age_group) |>
+  tidyr::pivot_wider(names_from = age_group, values_from = netmig) |>
+  dplyr::mutate(Total = rowSums(dplyr::across(tidyselect::where(is.numeric)))) |>
+  dplyr::arrange(dplyr::desc(Total)) |>
+  dplyr::rename(County = county) |>
+  gt::gt() |>
+  gt::fmt_number(columns = tidyselect::where(is.numeric), decimals = 0) |>
+  gt::tab_options(table.font.size = gt::pct(85), container.height = gt::px(600))
+```
+
+Four recurring shapes show up across the state.
+
+**University counties** gain heavily at 20–24 and give much of it back in the
+next group. Boulder adds `r scales::comma(v5("Boulder", "2020-2025", "20-24"))`
+at 20–24 and loses `r scales::comma(-v5("Boulder", "2020-2025", "25-29"))` at
+25–29; Larimer adds `r scales::comma(v5("Larimer", "2020-2025", "20-24"))` and
+loses `r scales::comma(-v5("Larimer", "2020-2025", "25-29"))`. The students
+arrive, and most of them leave again on schedule.
+
+**Denver** is the young-adult magnet in its purest form: a total of only
+`r fmt_signed(total_of("Denver"))`, but
+`r fmt_signed(v5("Denver", "2020-2025", "25-29"))` in the 25–29 group alone.
+The reversal comes immediately after: 30–34 is roughly flat
+(`r fmt_signed(v5("Denver", "2020-2025", "30-34"))`) and the two groups above
+it lose `r scales::comma(-v5("Denver", "2020-2025", "35-39"))` and
+`r scales::comma(-v5("Denver", "2020-2025", "40-44"))`. People arrive in Denver
+in their twenties and leave from their mid-thirties onward.
+
+**Suburban and exurban growth counties** — Weld
+(`r fmt_signed(total_of("Weld"))`), Douglas
+(`r fmt_signed(total_of("Douglas"))`), Adams
+(`r fmt_signed(total_of("Adams"))`) — gain across most age groups, and are
+where many of the families leaving Denver and Boulder are landing.
+
+**Resort counties** — Eagle, Pitkin, Summit — are net negative overall and lose
+people at most ages. Their one consistent gain is at 25–29
+(`r fmt_signed(v5("Eagle", "2020-2025", "25-29"))`,
+`r fmt_signed(v5("Pitkin", "2020-2025", "25-29"))` and
+`r fmt_signed(v5("Summit", "2020-2025", "25-29"))`), far too small to offset
+the losses elsewhere: a young workforce that does not stay.
+
+## The longer history, 1990 to 2025
+
+**1990 is the earliest start possible.** The SDO age-detailed population tables
+begin in 1990; the components of change reach back to 1970, but without age
+detail.
+
+The periods are different lengths, so net migration is **annualised** and
+expressed per 1,000 of the group's average population, where average population
+is the person-years lived in the period divided by its length:
+
+$$
+\text{rate} = \frac{\text{net migration} / \text{years}}{\text{person-years} / \text{years}} \times 1000
+$$
+
+```{r}
+#| label: fig-period-comparison
+#| fig-cap: "Annual net migration rate by age at end of period, Colorado"
+#| fig-alt: "Line chart of Colorado's annual net migration rate per 1,000 by age at the end of each of four periods. The 1990-2000 line is positive at every age. The 2000-2010 line is lower but positive almost everywhere. The 2010-2020 line rises again at young-adult ages and dips slightly negative above 70. The 2020-2025 line nearly matches the 1990s peak at 25-29 but is negative from 45-49 through 80-84."
+#| fig-width: 9
+#| fig-height: 5.5
+
+five |>
+  dplyr::filter(countyfips == "08000") |>
+  ggplot(aes(age_group, rate_per_1000, colour = period, group = period)) +
+  geom_hline(yintercept = 0, colour = "grey30", linewidth = 0.4) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.8) +
+  scale_colour_sdo_discrete() +
+  scale_y_continuous(labels = scales::label_number(style_positive = "plus")) +
+  labs(
+    title = "Colorado once gained at every age; now mainly among young adults",
+    subtitle = "Annual net migration per 1,000 people, by age at the end of each period",
+    x = "Age at end of period",
+    y = "Per 1,000 per year",
+    colour = NULL,
+    caption = source_caption
+  ) +
+  theme_sdo() +
+  theme(
+    legend.position = "top",
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+```
+
+```{r}
+#| label: tbl-period-broad
+#| tbl-cap: "Colorado annual net migration per 1,000, broad age groups"
+
+broad |>
+  dplyr::filter(countyfips == "08000") |>
+  dplyr::select(period, `Age at end` = age_group, rate_per_1000) |>
+  dplyr::arrange(`Age at end`) |>
+  dplyr::mutate(`Age at end` = as.character(`Age at end`)) |>
+  tidyr::pivot_wider(names_from = period, values_from = rate_per_1000) |>
+  gt::gt() |>
+  gt::fmt_number(columns = -`Age at end`, decimals = 1, force_sign = TRUE)
+```
+
+```{r}
+#| label: history-values
+
+annual_by_period <- five |>
+  dplyr::filter(countyfips == "08000") |>
+  dplyr::summarise(annual = sum(netmig_annual), .by = period)
+
+annual_of <- function(p) {
+  annual_by_period |> dplyr::filter(period == p) |> dplyr::pull(annual)
+}
+
+state_1990s <- five |> dplyr::filter(countyfips == "08000", period == "1990-2000")
+weakest_1990s <- state_1990s |> dplyr::slice_min(rate_per_1000)
+negative_now <- state_now |> dplyr::filter(netmig < 0)
+```
+
+Statewide net migration ran at about
+`r scales::comma(annual_of("1990-2000"), accuracy = 100)` a year in the 1990s,
+`r scales::comma(annual_of("2000-2010"), accuracy = 100)` in the 2000s,
+`r scales::comma(annual_of("2010-2020"), accuracy = 100)` in the 2010s and
+`r scales::comma(annual_of("2020-2025"), accuracy = 100)` since 2020. The totals
+swing with the economy; the age profile tells a slower and more one-directional
+story.
+
+In 1990–2000 Colorado gained people at **every age**. The weakest group,
+`r weakest_1990s$age_group`, still ran at
+`r fmt_signed(weakest_1990s$rate_per_1000, 1)` per 1,000 a year. Nothing since
+has repeated it. The 25–29 rate went from
+`r fmt_signed(v5("Colorado", "1990-2000", "25-29", "rate_per_1000"), 1)` in the
+1990s to `r fmt_signed(v5("Colorado", "2000-2010", "25-29", "rate_per_1000"), 1)`,
+`r fmt_signed(v5("Colorado", "2010-2020", "25-29", "rate_per_1000"), 1)` and
+`r fmt_signed(v5("Colorado", "2020-2025", "25-29", "rate_per_1000"), 1)`, while
+in 2020–2025 every group from `r dplyr::first(as.character(negative_now$age_group))`
+to `r dplyr::last(as.character(negative_now$age_group[negative_now$age_group != "85+"]))`
+is negative. Colorado draws people in their twenties about as strongly as in
+the boom, and no longer draws the families, midlife movers and retirees who
+used to come alongside them. The 10–14 rate falling from
+`r fmt_signed(v5("Colorado", "1990-2000", "10-14", "rate_per_1000"), 1)` to
+`r fmt_signed(v5("Colorado", "2020-2025", "10-14", "rate_per_1000"), 1)` is the
+same fact seen from the other end: those are the children of the families that
+are no longer arriving.
+
+::: {.callout-tip}
+## Explore this by county
+The [dashboard](dashboard.qmd) compares any county against others within a
+period, or across all four periods, in five-year or broad groups, and forms
+any span inside 2020–2025.
+:::
+
+A limit worth naming: a group ending a period at a given age lived through a
+different stretch of its own life in a five-year period than in a ten-year
+one. Annualising handles the length, not which ages were lived through, so the
+comparison is sound in direction and broadly in magnitude rather than exact at
+a single age.
+
+### SDO's existing published figures
+
+```{r}
+#| label: sdo-published
+
+sdo_published <- readr::read_csv(
+  here::here("output", "sdo-published-netmig-by-age.csv"),
+  show_col_types = FALSE
+)
+published_1020 <- sdo_published |>
+  dplyr::filter(fips == 0) |>
+  dplyr::summarise(netmig = sum(netmig1020)) |>
+  dplyr::pull(netmig)
+here_1020 <- five |>
+  dplyr::filter(countyfips == "08000", period == "2010-2020") |>
+  dplyr::summarise(netmig = sum(netmig)) |>
+  dplyr::pull(netmig)
+```
+
+The office already publishes net migration by age for 1995–2000, 2000–2010 and
+2010–2020 in `data.netmigrbyage`, written out here as
+`output/sdo-published-netmig-by-age.csv`. It is **not** used as a control. Its
+2010–2020 age detail sums to `r scales::comma(published_1020)` statewide,
+against `r scales::comma(here_1020)` here, which matches the office's own
+components of change; its level and rate columns also contradict each other
+above age 65. Someone who knows that table's vintage and definitions should
+confirm what it represents before the two series are reconciled.
+
+## Caveats
+
+**This recovers the migration implied by the population estimates, not an
+independent measurement.** The SDO estimates are themselves built from vital
+records and administrative migration signals. What this analysis recovers is
+the net migration by age those estimates imply; it inherits their assumptions
+rather than testing them. Any error in the population estimates lands in net
+migration, because that is the term being solved for, and matters most in
+small counties.
+
+**County deaths by age are estimated.** County totals are exact, but the
+spread of deaths across ages comes from statewide rates and one year (2025) of
+county mortality patterns; see Validation. Rio Grande has no 2025 report and
+uses the statewide pattern.
+
+**Broomfield, 1990–2000.** Broomfield County was formed in 2001 from parts of
+Adams, Boulder, Jefferson and Weld. The population estimates record the
+transfer of its territory in estimate year 2000 as migration, so the 1990–2000
+figures for those five counties include it; affected rows carry a note in the
+published file and on the dashboard.
+
+**The oldest group is the least reliable.** The 85+ group at the end of a
+period is drawn from an open-ended group with very high mortality, so what
+remains is small and its residual depends as much on the death estimates as on
+anyone moving.
+
+**Sex detail is noisier than the totals.** Births are split by the statewide
+sex ratio, and the residual magnifies small differences in sex composition, so
+individual cells by sex should not be read closely.
+
+**Group quarters drive some of the sharpest patterns.** Prisons in Bent,
+Crowley and Fremont and universities in Boulder and Larimer produce large
+age-specific flows that are genuine population movement but institutional
+rather than household migration.
