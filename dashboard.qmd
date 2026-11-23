@@ -12,7 +12,9 @@ execute:
 
 ```{=html}
 <!--
-Data: output/netmig-comparison.csv (14,040 rows). Built by R/03-compare-periods.R.
+Data: output/netmig-comparison.csv (17,940 rows) and
+output/netmig-annual-sya-2020-2025.csv (59,150 rows), both written by
+R/02-build-periods.R from public inputs only.
 This dashboard is pure OJS -- no R/Shiny -- so it can be deployed as a static
 page on GitHub Pages. See the "Methods" tab for definitions and caveats, and
 netmig-by-age.html for the full derivation.
@@ -41,12 +43,28 @@ data = raw.map((d) => {
 
 ```{ojs}
 //| echo: false
-// age_group is age at the END of the period (uniform 18-level grid, both
-// periods share it). age_order 1..18 gives display order.
-ageLevels = Array.from(new Set(data.map((d) => d.age_group)))
-  .map((g) => ({ g, o: data.find((d) => d.age_group === g).age_order }))
-  .sort((a, b) => a.o - b.o)
-  .map((d) => d.g)
+// age_group is age at the END of the period, in one of two groupings: "five"
+// (eighteen five-year groups) or "broad" (0-17, 18-24, 25-44, 45-64, 65+).
+// age_order gives display order within a grouping.
+ageLevelsFor = (grouping) =>
+  Array.from(
+    d3.rollup(
+      data.filter((d) => d.grouping === grouping),
+      (v) => v[0].age_order,
+      (d) => d.age_group
+    ),
+    ([g, o]) => ({ g, o })
+  )
+    .sort((a, b) => a.o - b.o)
+    .map((d) => d.g)
+```
+
+```{ojs}
+//| echo: false
+groupingOptions = new Map([
+  ["Five-year groups", "five"],
+  ["0-17, 18-24, 25-44, 45-64, 65+", "broad"]
+])
 ```
 
 ```{ojs}
@@ -247,12 +265,16 @@ measures = {
 
 ```{ojs}
 //| echo: false
-// Reconstructs the cohort's starting age group from the grid spacing (both
-// periods sit on the same 5-year grid, and years is always a multiple of 5),
-// so the CSV doesn't need a redundant origin column.
-originLabel = (age_order, years) => {
-  const idx = age_order - years / 5;
-  return idx < 1 ? "Born during period" : ageLevels[idx - 1];
+// The same people's ages at the START of the period: the end-of-period group
+// shifted back by the period's length. Ages below zero were born during it.
+originLabel = (d) => {
+  const [lo, hiText] = d.age_group.replace("+", "-").split("-");
+  const sLo = +lo - d.years;
+  if (hiText === "") return sLo < 0 ? "Born during period or 0+" : `${sLo}+`;
+  const sHi = +hiText - d.years;
+  if (sHi < 0) return "Born during period";
+  if (sLo < 0) return `Born during period or 0-${sHi}`;
+  return `${sLo}-${sHi}`;
 }
 ```
 
@@ -260,11 +282,23 @@ originLabel = (age_order, years) => {
 //| echo: false
 cohortLabel = (d) => {
   const py = periodYears[d.period];
-  const origin = originLabel(d.age_order, d.years);
+  const origin = originLabel(d);
   const originText = origin === "Born during period"
     ? "Born during the period"
     : `${origin} in ${py.start}`;
   return `${originText} → ${d.age_group} in ${py.end}`;
+}
+```
+
+```{ojs}
+//| echo: false
+// Shown under a chart when any of its rows carries a caveat (the 2000
+// Broomfield boundary change in 1990-2000).
+caveatNote = (rows) => {
+  const notes = Array.from(new Set(rows.map((d) => d.caveat).filter(Boolean)));
+  if (!notes.length) return html``;
+  const areas = Array.from(new Set(rows.filter((d) => d.caveat).map((d) => d.county))).join(", ");
+  return html`<div class="control-hint">⚠ ${areas}, 1990-2000: ${notes.join(" ")}</div>`;
 }
 ```
 
@@ -302,6 +336,11 @@ viewof periods_p = Inputs.checkbox(periodOptions, { label: "Periods", value: per
 ```{ojs}
 //| echo: false
 viewof sex_p = Inputs.radio(["Total", "Male", "Female"], { label: "Sex", value: "Total" })
+```
+
+```{ojs}
+//| echo: false
+viewof grouping_p = Inputs.radio(groupingOptions, { label: "Age groups", value: "five" })
 ```
 
 ```{ojs}
@@ -348,7 +387,11 @@ latestPeriod_p = selectedPeriods_p[selectedPeriods_p.length - 1]
 ```{ojs}
 //| echo: false
 rows_p = data.filter(
-  (d) => d.county === area_p && d.sex_label === sex_p && selectedPeriods_p.includes(d.period)
+  (d) =>
+    d.grouping === grouping_p &&
+    d.county === area_p &&
+    d.sex_label === sex_p &&
+    selectedPeriods_p.includes(d.period)
 )
 ```
 
@@ -447,7 +490,7 @@ chart_p1 = Plot.plot({
   height: 380,
   marginBottom: 66,
   x: { axis: null },
-  fx: { domain: ageLevels, label: "Age at end of period (cohort)", tickRotate: -45 },
+  fx: { domain: ageLevelsFor(grouping_p), label: "Age at end of period (cohort)", tickRotate: grouping_p === "five" ? -45 : 0 },
   y: { label: measures[measure_p].axis, grid: true, tickFormat: measures[measure_p].tickFormat },
   color: {
     domain: selectedPeriods_p,
@@ -466,6 +509,11 @@ chart_p1 = Plot.plot({
     })
   ]
 })
+```
+
+```{ojs}
+//| echo: false
+caveatNote(rows_p)
 ```
 
 ```{ojs}
@@ -493,7 +541,7 @@ chart_p2 = Plot.plot({
   width,
   height: 340,
   marginLeft: 55,
-  y: { domain: ageLevels, label: null },
+  y: { domain: ageLevelsFor(grouping_p), label: null },
   x: {
     label: `Change in ${measures[measure_p].short.toLowerCase()}`,
     tickFormat: measures[measure_p].tickFormat,
@@ -535,11 +583,12 @@ tableRows_p = rows_p
   .map((d) => ({
     Period: d.period,
     "Age at end": d.age_group,
-    "Age at start": originLabel(d.age_order, d.years),
+    "Age at start": originLabel(d),
     Sex: d.sex_label,
     "Pop. start": d3.format(",")(Math.round(d.pop_start)),
     "Pop. end": d3.format(",")(Math.round(d.pop_end)),
-    [measures[measure_p].short]: measures[measure_p].fmt(d[measure_p])
+    [measures[measure_p].short]: measures[measure_p].fmt(d[measure_p]),
+    Note: d.caveat ? "Boundary change, see note" : ""
   }))
 ```
 
@@ -590,6 +639,11 @@ viewof sex_a = Inputs.radio(["Total", "Male", "Female"], { label: "Sex", value: 
 
 ```{ojs}
 //| echo: false
+viewof grouping_a = Inputs.radio(groupingOptions, { label: "Age groups", value: "five" })
+```
+
+```{ojs}
+//| echo: false
 viewof measure_a = Inputs.radio(
   new Map([
     ["Rate per 1,000 (annual)", "rate_per_1000"],
@@ -610,7 +664,11 @@ Age groups are age at the **end** of the selected period.
 ```{ojs}
 //| echo: false
 rows_a = data.filter(
-  (d) => d.period === period_a && counties_a.includes(d.county) && d.sex_label === sex_a
+  (d) =>
+    d.grouping === grouping_a &&
+    d.period === period_a &&
+    counties_a.includes(d.county) &&
+    d.sex_label === sex_a
 )
 ```
 
@@ -632,12 +690,14 @@ widest_a = spreadByAge_a.length
 
 ```{ojs}
 //| echo: false
+// The young-adult group that carries most of Colorado's net migration.
 statewideRef_a = data.find(
   (d) =>
+    d.grouping === grouping_a &&
     d.county === "Colorado" &&
     d.period === period_a &&
     d.sex_label === sex_a &&
-    d.age_group === "25-29"
+    d.age_group === (grouping_a === "five" ? "25-29" : "25-44")
 )
 ```
 
@@ -657,10 +717,10 @@ html`${counties_a.length} area${counties_a.length !== 1 ? "s" : ""} &middot; ${p
 
 ```{ojs}
 //| content: valuebox
-//| title: "Colorado reference: 25-29 cohort"
+//| title: "Colorado reference: young adults"
 //| icon: geo-alt
 //| color: primary
-html`${statewideRef_a ? measures[measure_a].fmt(statewideRef_a[measure_a]) : "n/a"}`
+html`${statewideRef_a ? `${statewideRef_a.age_group}: ${measures[measure_a].fmt(statewideRef_a[measure_a])}` : "n/a"}`
 ```
 
 ```{ojs}
@@ -680,7 +740,7 @@ chart_a = Plot.plot({
   width,
   height: 420,
   marginBottom: 66,
-  x: { type: "point", domain: ageLevels, label: "Age at end of period (cohort)", tickRotate: -45 },
+  x: { type: "point", domain: ageLevelsFor(grouping_a), label: "Age at end of period (cohort)", tickRotate: grouping_a === "five" ? -45 : 0 },
   y: { label: measures[measure_a].axis, grid: true, tickFormat: measures[measure_a].tickFormat },
   color: {
     domain: counties_a,
@@ -713,6 +773,11 @@ chart_a = Plot.plot({
 
 ```{ojs}
 //| echo: false
+caveatNote(rows_a)
+```
+
+```{ojs}
+//| echo: false
 svgDownloadButton(
   chart_a,
   `co-netmig-compare-areas-${period_a}-${measureSlug(measure_a)}.svg`,
@@ -736,11 +801,12 @@ tableRows_a = rows_a
   .map((d) => ({
     Area: d.county,
     "Age at end": d.age_group,
-    "Age at start": originLabel(d.age_order, d.years),
+    "Age at start": originLabel(d),
     Sex: d.sex_label,
     "Pop. start": d3.format(",")(Math.round(d.pop_start)),
     "Pop. end": d3.format(",")(Math.round(d.pop_end)),
-    [measures[measure_a].short]: measures[measure_a].fmt(d[measure_a])
+    [measures[measure_a].short]: measures[measure_a].fmt(d[measure_a]),
+    Note: d.caveat ? "Boundary change, see note" : ""
   }))
 ```
 
@@ -762,6 +828,344 @@ downloadLink_a = {
 
 :::
 
+# Custom span
+
+## {.sidebar}
+
+Choose any start and end year between 2020 and 2025 and an age grouping. The
+figures are added up from one-year, single-year-of-age results.
+
+```{ojs}
+//| echo: false
+viewof start_c = Inputs.select(d3.range(2020, 2025), { label: "Start (July 1)", value: 2020, format: String })
+```
+
+```{ojs}
+//| echo: false
+// Rebuilt whenever the start year changes, so the end is always later.
+viewof end_c = Inputs.select(d3.range(start_c + 1, 2026), { label: "End (July 1)", value: 2025, format: String })
+```
+
+```{ojs}
+//| echo: false
+viewof grouping_c = Inputs.radio(
+  new Map([
+    ["0-17, 18-24, 25-44, 45-64, 65+", "broad"],
+    ["Five-year groups", "five"]
+  ]),
+  { label: "Age groups", value: "broad" }
+)
+```
+
+```{ojs}
+//| echo: false
+viewof counties_c = Inputs.select(countyOptions, {
+  label: "Areas (ctrl/cmd-click for multiple)",
+  multiple: 6,
+  value: ["Colorado", "Denver", "Douglas"]
+})
+```
+
+```{ojs}
+//| echo: false
+viewof sex_c = Inputs.radio(["Total", "Male", "Female"], { label: "Sex", value: "Total" })
+```
+
+```{ojs}
+//| echo: false
+viewof kind_c = Inputs.radio(
+  new Map([
+    ["Rate per 1,000", "rate"],
+    ["People", "people"]
+  ]),
+  { label: "Measure", value: "rate" }
+)
+```
+
+```{ojs}
+//| echo: false
+viewof basis_c = Inputs.radio(
+  new Map([
+    ["Annual average", "annual"],
+    ["Total over the span", "total"]
+  ]),
+  { label: "Basis", value: "annual" }
+)
+```
+
+<div class="control-hint">A total rate is net migration over the whole span per 1,000 of the group's average population: the annual rate times the number of years.</div>
+
+::: {.callout-note}
+Age groups are age at the **end** of the span. County deaths by age are
+estimated from public data, as on every page; see Methods.
+:::
+
+::: {.hidden}
+
+```{ojs}
+//| echo: false
+// One row per county (08000 = Colorado), sex, estimate year (ending July 1 of
+// `year`) and single year of age at the end of that year. Built by R/01 and
+// published by R/04 with net migration from modelled deaths.
+annualRaw = FileAttachment("output/netmig-annual-sya-2020-2025.csv").csv()
+```
+
+```{ojs}
+//| echo: false
+annual = annualRaw.map((d) => {
+  const fips = d.countyfips;
+  const t = d3.autoType(d);
+  t.countyfips = fips;
+  return t;
+})
+```
+
+```{ojs}
+//| echo: false
+countyByFips = new Map(data.map((d) => [d.countyfips, d.county]))
+```
+
+```{ojs}
+//| echo: false
+// Lower bound and label of each age group, by grouping.
+groupings = {
+  return {
+    broad: [
+      { lo: 0, label: "0-17" },
+      { lo: 18, label: "18-24" },
+      { lo: 25, label: "25-44" },
+      { lo: 45, label: "45-64" },
+      { lo: 65, label: "65+" }
+    ],
+    five: d3.range(0, 90, 5).map((lo) => ({ lo, label: lo === 85 ? "85+" : `${lo}-${lo + 4}` }))
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+groupLevels_c = groupings[grouping_c].map((g) => g.label)
+```
+
+```{ojs}
+//| echo: false
+// A one-year cohort that ends year `year` at age_end is (end - year) years
+// older at the end of the span. Summing its annual rows gives its net
+// migration over the whole span; rows are then gathered by age group.
+rows_c = {
+  const years = end_c - start_c;
+  const groups = groupings[grouping_c];
+  const groupOf = (age) => groups.filter((g) => g.lo <= age).at(-1).label;
+  const sexCode = { Male: 1, Female: 2 }[sex_c];
+  const out = [];
+  for (const area of counties_c) {
+    const fips = [...countyByFips].find(([, name]) => name === area)?.[0];
+    const sums = new Map(groups.map((g) => [g.label, { netmig: 0, py: 0, popStart: 0, popEnd: 0 }]));
+    for (const d of annual) {
+      if (d.countyfips !== fips || d.year <= start_c || d.year > end_c) continue;
+      if (sexCode && d.sex !== sexCode) continue;
+      const s = sums.get(groupOf(Math.min(d.age_end + (end_c - d.year), 100)));
+      s.netmig += d.netmig;
+      s.py += d.person_years;
+      if (d.year === start_c + 1) s.popStart += d.pop_start;
+      if (d.year === end_c) s.popEnd += d.pop_end;
+    }
+    groups.forEach((g, i) => {
+      const s = sums.get(g.label);
+      out.push({
+        county: area,
+        age_group: g.label,
+        age_order: i + 1,
+        pop_start: s.popStart,
+        pop_end: s.popEnd,
+        person_years: s.py,
+        people_total: s.netmig,
+        people_annual: s.netmig / years,
+        rate_annual: s.py > 0 ? (s.netmig / s.py) * 1000 : 0,
+        rate_total: s.py > 0 ? (s.netmig / s.py) * 1000 * years : 0
+      });
+    });
+  }
+  return out;
+}
+```
+
+```{ojs}
+//| echo: false
+// Four measures: rate or people, each as an annual average or a total over
+// the span. The two annual ones reuse the definitions shared with the other
+// pages.
+measures_c = {
+  const signed = (f) => (v) => (v < 0 ? "−" : "+") + d3.format(f)(Math.abs(v));
+  const people_total = {
+    label: "Net migration over the span (people)",
+    short: "People, span total",
+    axis: "Net migration over the span (people)",
+    fmt: signed(",.0f"),
+    fmtShort: signed(",.0f"),
+    tickFormat: (v) => d3.format("+,")(v)
+  };
+  const rate_total = {
+    label: "Net migration over the span (per 1,000 people)",
+    short: "Rate per 1,000, span total",
+    axis: "Net migration over the span (per 1,000)",
+    fmt: (v) => signed(",.1f")(v) + " per 1,000",
+    fmtShort: signed(",.1f"),
+    tickFormat: (v) => d3.format("+,.0f")(v)
+  };
+  return {
+    rate_annual: measures.rate_per_1000,
+    people_annual: measures.netmig_annual,
+    rate_total,
+    people_total
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+measure_c = `${kind_c}_${basis_c}`
+```
+
+```{ojs}
+//| echo: false
+spanLabel_c = `${start_c}-${end_c}`
+```
+
+```{ojs}
+//| echo: false
+firstArea_c = counties_c[0] ?? "Colorado"
+```
+
+```{ojs}
+//| echo: false
+// All-ages value for the first area. A rate is total net migration over total
+// person-years, never a sum of group rates.
+allAges_c = {
+  const r = rows_c.filter((d) => d.county === firstArea_c);
+  const nm = d3.sum(r, (d) => d.people_total);
+  const py = d3.sum(r, (d) => d.person_years);
+  const years = end_c - start_c;
+  const rate = py > 0 ? (nm / py) * 1000 : 0;
+  return { people_total: nm, people_annual: nm / years, rate_annual: rate, rate_total: rate * years };
+}
+```
+
+```{ojs}
+//| echo: false
+peak_c = rows_c
+  .filter((d) => d.county === firstArea_c)
+  .reduce((a, b) => (b[measure_c] > a[measure_c] ? b : a), { [measure_c]: -Infinity, age_group: "n/a" })
+```
+
+:::
+
+## Column {width="100%"}
+
+### Row {height="18%"}
+
+```{ojs}
+//| content: valuebox
+//| title: "Span"
+//| icon: calendar-range
+//| color: secondary
+html`July 1, ${start_c} → July 1, ${end_c} <strong>(${end_c - start_c} yr)</strong>`
+```
+
+```{ojs}
+//| content: valuebox
+//| title: "All ages, first area"
+//| icon: geo-alt
+//| color: primary
+html`${firstArea_c}: <strong>${measures_c[measure_c].fmt(allAges_c[measure_c])}</strong>`
+```
+
+```{ojs}
+//| content: valuebox
+//| title: "Peak age group, first area"
+//| icon: graph-up-arrow
+//| color: success
+html`${peak_c.age_group}: <strong>${measures_c[measure_c].fmt(peak_c[measure_c])}</strong>`
+```
+
+### Row {height="46%"}
+
+::: {.card title="Net migration by age group, selected span and areas"}
+
+```{ojs}
+chart_c = Plot.plot({
+  width,
+  height: 400,
+  marginBottom: 56,
+  x: { axis: null },
+  fx: { domain: groupLevels_c, label: `Age on July 1, ${end_c}`, tickRotate: grouping_c === "five" ? -45 : 0 },
+  y: { label: measures_c[measure_c].axis, grid: true, tickFormat: measures_c[measure_c].tickFormat },
+  color: { domain: counties_c, range: countyColors, legend: true, label: "Area" },
+  marks: [
+    Plot.ruleY([0]),
+    Plot.barY(rows_c, {
+      x: "county",
+      y: measure_c,
+      fx: "age_group",
+      fill: "county",
+      title: (d) =>
+        `${d.county}, aged ${d.age_group} in ${end_c}\n${spanLabel_c}: ${measures_c[measure_c].fmt(d[measure_c])}`
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+svgDownloadButton(
+  chart_c,
+  `co-netmig-${spanLabel_c}-${grouping_c}-${measure_c}.svg`,
+  { domain: counties_c, range: countyColors }
+)
+```
+
+:::
+
+### Row {height="36%"}
+
+::: {.card title="Selected data"}
+
+::: {.hidden}
+
+```{ojs}
+//| echo: false
+tableRows_c = rows_c.map((d) => ({
+  Area: d.county,
+  Span: spanLabel_c,
+  [`Age in ${end_c}`]: d.age_group,
+  Sex: sex_c,
+  [`Pop. ${start_c}`]: d3.format(",")(Math.round(d.pop_start)),
+  [`Pop. ${end_c}`]: d3.format(",")(Math.round(d.pop_end)),
+  "Net migration, span": measures_c.people_total.fmt(d.people_total),
+  "Per year": measures_c.people_annual.fmt(d.people_annual),
+  "Rate per 1,000, span": measures_c.rate_total.fmt(d.rate_total),
+  "Rate per 1,000, annual": measures_c.rate_annual.fmt(d.rate_annual)
+}))
+```
+
+:::
+
+```{ojs}
+viewof table_c = Inputs.table(tableRows_c, { rows: 12, layout: "auto" })
+```
+
+```{ojs}
+//| echo: false
+downloadLink_c = {
+  const csv = d3.csvFormat(tableRows_c);
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  return html`<a class="btn btn-sm btn-outline-primary dl-button" href="${url}" download="netmig_${spanLabel_c}_${grouping_c}_${sex_c}.csv">⬇ Download CSV</a>`;
+}
+```
+
+:::
+
 # Methods
 
 ## Row
@@ -770,60 +1174,76 @@ downloadLink_a = {
 
 This dashboard compares Colorado's implied net migration by age across
 **64 counties** and **four periods** (1990-2000, 2000-2010, 2010-2020, and
-2020-2025), estimated as a demographic residual: population change minus
-births plus deaths, by age cohort. Full derivation, validation, and
-county-by-county narrative are in the companion report:
-[netmig-by-age.html](netmig-by-age.html).
+2020-2025), and for any span inside 2020-2025. Net migration is estimated as a
+demographic residual: population change minus births plus deaths. Full
+derivation, validation, and county-by-county narrative are in the companion
+report: [netmig-by-age.html](netmig-by-age.html).
+
+### How it is built
+
+Every figure on every page comes from one set of results: net migration for
+each county, sex, single year of age and year from July 1990 to July 2025,
+using the State Demography Office's single-year population estimates. Adding
+up the one-year results for the same people gives exactly their net migration
+over a longer period, which is how the four periods, both age groupings and
+the custom spans are all formed. All pages use the same method, so the
+2020-2025 figures agree across them.
+
+County deaths by age are confidential, and because the population figures are
+public, net migration published by age would let anyone work them back out
+if it were built from recorded deaths. Deaths are therefore **estimated from
+public data**: statewide death rates by age, sex and year, adjusted by each
+county's own age pattern of deaths in CDPHE's public 2025 county summary
+reports, and scaled to the county's published death total for each year.
+County totals across all ages are unaffected. Against recorded deaths, the
+broad age groups differ by a median of 6 to 7 people per decade (about 0.3 per
+1,000 a year); the largest differences are in the oldest groups of the largest
+counties, and are biggest in the 1990s, when county mortality patterns
+differed most from those of 2025.
 
 ### Reading the age groups
 
 `age_group` is **age at the end of the period**, not the start. A bar or point
-labeled `25-29` in the 2020-2025 period represents the cohort that was 20-24 in
-2020 and turned 25-29 by 2025 -- follow the arrow in any tooltip
-("20-24 in 2020 &rarr; 25-29 in 2025") to see where that group started. All
-four periods share the same 18 age-group levels, which is what makes them
-directly comparable group-for-group.
+labeled `25-29` in the 2020-2025 period represents the people who were 20-24 in
+2020 and turned 25-29 by 2025 -- the tooltip on any mark shows where that group
+started. Two groupings are offered on every page: eighteen five-year groups
+and five broad groups (0-17, 18-24, 25-44, 45-64, 65+).
 
 ### Choosing a measure
 
-Two measures are offered as equal, first-class options:
+- **Annual net migration (people per year)** -- net migration over the period
+  divided by its length. A headcount, affected by the size of the area.
+- **Annual net migration rate (per 1,000 people)** -- the same annual figure
+  per 1,000 of the group's average population (person-years divided by the
+  period's length). The size-neutral measure, and the default.
+- On the **Custom span** page, either can also be shown as a **total over the
+  span**; a total rate is the annual rate times the number of years.
 
-- **Annual net migration (people per year)** -- the period-level net migration
-  divided by the period's length (10 or 5 years). This is a headcount and is
-  affected by the size of the area.
-- **Annual net migration rate (per 1,000 people)** -- the same annualized
-  figure divided by the cohort's average population and multiplied by 1,000.
-  This is the size-neutral measure: it is what lets a small county be compared
-  fairly against Denver or the state as a whole. It is the default.
-
-Both measures are annualized, so **both are valid to compare across all four
-periods** even though three of them (1990-2000, 2000-2010, 2010-2020) are 10
-years long and the most recent (2020-2025) is 5. (The raw, un-annualized
-period-level net migration is not shown in this dashboard for exactly that
-reason -- it is not comparable across periods of different length.)
+Annual figures are comparable across periods of different length; totals are
+not.
 
 ### The headline pattern
 
 The 25-29 age group traces Colorado's boom-bust migration history: an annual
-rate of +38.4 per 1,000 in 1990-2000, roughly halving to +19.0 in 2000-2010,
-recovering to +26.9 in 2010-2020, and then jumping to +36.3 in 2020-2025 --
-this dashboard's sharpest, narrowest peak in the whole series. Older working
-ages tell the opposite story: the 55-59 group ran positive in every prior
-period (+8.96 in 1990-2000, +1.27 in 2000-2010, +1.26 in 2010-2020) and then
-turned negative for the first time in 2020-2025 (-5.06). In short, Colorado
-used to draw people at nearly every age -- the 1990s profile was positive
-across almost the whole age range -- and now draws almost exclusively young
-adults while older workers net out-migrate. Use the **Compare periods** tab
-on Colorado with all four periods selected to see this shape change directly,
-then switch the area selector to check whether your county of interest
-follows the same pattern.
+rate of +38.7 per 1,000 in 1990-2000, roughly halving to +19.5 in 2000-2010,
+recovering to +28.3 in 2010-2020, and +36.1 in 2020-2025. Older working ages
+tell the opposite story: the 55-59 group ran positive in every earlier period
+(+8.7 in 1990-2000, +1.2 in 2000-2010, +0.9 in 2010-2020) and turned negative
+in 2020-2025 (-5.0). In the broad groups, 45-64 and 65+ were both positive in
+the 1990s (+10.7 and +5.4 per 1,000) and are both negative in 2020-2025 (-4.0
+and -3.6). Colorado used to draw people at nearly every age and now draws
+mainly young adults.
 
 ### Caveats
 
-This recovers the migration implied by the Census Bureau's published county
-age estimates, not an independent measurement -- see the companion report for
-the full derivation, calibration checks, and caveats on group quarters and sex
-detail. Small counties in particular can have age-specific rates moved
-noticeably by a handful of records.
+- These are the migration implied by published population estimates, not an
+  independent measurement.
+- **Broomfield, 1990-2000.** Broomfield County was formed in 2001 from parts of
+  Adams, Boulder, Jefferson and Weld. The population estimates record the
+  transfer of its territory in estimate year 2000 as migration, so the
+  1990-2000 figures for those five counties include it. Affected rows carry a
+  note.
+- Small counties can have age-specific rates moved noticeably by a handful of
+  people.
 
 :::

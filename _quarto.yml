@@ -8,8 +8,8 @@ project:
   resources:
     - output/*.csv
 
-# The data build needs the SDO shared drive and the internal sdotools package,
-# neither of which exists on a CI runner. Freezing the computed chunk results
+# The data build needs the SDO database through the sdotools package,
+# which a CI runner cannot reach. Freezing the computed chunk results
 # lets GitHub Actions render the site with Quarto alone. Re-run the R scripts
 # locally and re-render when the data changes; commit the _freeze directory.
 execute:
@@ -17,7 +17,7 @@ execute:
 
 website:
   title: "Colorado Net Migration by Age"
-  description: "Net migration by age for Colorado and its counties, 2010-2020 and 2020-2025"
+  description: "Net migration by age for Colorado and its counties, 1990-2025"
   site-url: https://gtottensdo.github.io/co-netmig-by-age-gt/
   navbar:
     left:
