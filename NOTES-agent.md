@@ -568,10 +568,21 @@ for pulling sdo data?".
   5.5 -> 6.3 people, 90th percentile 47 -> 61. Statewide and county totals are
   unchanged.
 
+## 2026-11-23 (night) — Second history rewrite
+
+Owner: "yes lets do another history rewrite - and can you submit another PR?".
+`data/state-deaths-by-band.csv` and `data/state-births-by-sex.csv` (statewide
+tabulations of restricted records, in the restore commit and the
+span-comparison commit) were stripped from every commit with
+`git filter-branch`; the branch tip's tree is unchanged. `main` and
+`work-2026-11-23` were force-pushed with leases on the old heads; PR #2 was
+closed as superseded and PR #3 opened. Backup of the previous history:
+`internal/history-before-cleanup-2-2026-11-23.bundle`.
+
 ## Where to start next
 
-1. **Owner:** review and merge PR #1 (span comparison and review fixes; `main`
-   already carries the cleaned history and today's earlier work).
+1. **Owner:** review and merge PR #3 (public inputs only, download script, SDO
+   lookups service, span comparison, review fixes).
 2. Nothing is running; logs are in `logs/finished/`.
 3. To rebuild: `R/00` to `R/04`, then the render; no account or database
    access is needed. Inside SDO, `internal/` re-runs the check against recorded
