@@ -2,7 +2,7 @@
 # Estimates Program (PEP, vintage 2025), Colorado and counties, 2020-2025.
 #
 # From 2026-11-23 the 2020-2025 build reads population from the SDO
-# single-year-of-age table (estimates.county_sya) instead of the Census age/sex
+# single-year-of-age estimates instead of the Census age/sex
 # file, because only single years of age support spans shorter than five years
 # and age groups such as 18-24. This script measures how far the two sources
 # differ, so the change in the published figures can be explained:
@@ -22,65 +22,49 @@ out_dir <- file.path(proj_dir, "output-internal") # check results, not committed
 
 years <- 2020:2025
 
-# data-raw/ is not committed, so the two Census files are fetched on first run.
-census_url <- "https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/counties"
-dir.create(raw_dir, showWarnings = FALSE, recursive = TRUE)
-purrr::walk2(
-  c("asrh/cc-est2025-agesex-08.csv", "totals/co-est2025-alldata.csv"),
-  c("cc-est2025-agesex-08.csv", "co-est2025-alldata.csv"),
-  \(remote, local) {
-    dest <- file.path(raw_dir, local)
-    if (!file.exists(dest)) {
-      download.file(
-        file.path(census_url, remote),
-        dest,
-        mode = "wb",
-        quiet = TRUE
-      )
-    }
-  }
-)
+# The Census files are downloaded by R/00.
+census_dir <- file.path(raw_dir, "census")
+stopifnot(file.exists(file.path(census_dir, "cc-est2025-agesex-08.csv")))
 
-# ---- SDO population and components ------------------------------------------
+# ---- SDO population and components (public lookups service) ----------------
 
-db <- sdotools::sdo_db_connect(public = TRUE)
-withr::defer(DBI::dbDisconnect(db))
+source(file.path(proj_dir, "R", "sdo-lookups.R"))
 
 # Single-year population, collapsed to the eighteen Census five-year groups
-# (85+ open) so the two sources can be compared group by group.
-sdo_age <- dplyr::tbl(db, dbplyr::in_schema("estimates", "county_sya")) |>
-  dplyr::filter(datatype == "Estimate", year %in% !!years) |>
-  dplyr::select(countyfips, year, age, malepopulation, femalepopulation) |>
-  dplyr::collect() |>
+# (85+ open) so the two sources can be compared group by group. Counties only;
+# the state is their sum, as for the Census file below.
+sdo_age_county <- sdo_get_sya(years) |>
+  dplyr::filter(datatype == "Estimate") |>
   tidyr::pivot_longer(
     c(malepopulation, femalepopulation),
     names_to = "sex",
     values_to = "pop"
   ) |>
   dplyr::mutate(
-    countyfips = sprintf("08%03d", as.integer(countyfips)),
-    year = as.integer(year),
+    countyfips = sprintf("08%03d", countyfips),
     sex = dplyr::if_else(sex == "malepopulation", "Male", "Female"),
-    age_start = pmin(as.integer(age) %/% 5L * 5L, 85L)
+    age_start = pmin(age %/% 5L * 5L, 85L)
   ) |>
-  dplyr::summarise(
-    sdo_pop = sum(as.numeric(pop)),
-    .by = c(countyfips, year, sex, age_start)
+  dplyr::summarise(sdo_pop = sum(pop), .by = c(countyfips, year, sex, age_start))
+
+sdo_age <- sdo_age_county |>
+  dplyr::bind_rows(
+    sdo_age_county |>
+      dplyr::summarise(sdo_pop = sum(sdo_pop), .by = c(year, sex, age_start)) |>
+      dplyr::mutate(countyfips = "08000")
   )
 
-# Components by county and estimate year (July to July). The 2020 row is not
-# used: it is the year ending 7/1/2020, before the comparison window opens.
-sdo_components <- dplyr::tbl(
-  db,
-  dbplyr::in_schema("estimates", "components_change")
-) |>
-  dplyr::filter(year %in% !!years[-1]) |>
-  dplyr::select(countyfips, year, births, deaths, netmig) |>
-  dplyr::collect() |>
-  dplyr::mutate(
-    countyfips = sprintf("08%03d", as.integer(countyfips)),
-    year = as.integer(year),
-    dplyr::across(c(births, deaths, netmig), as.numeric)
+# Components by county and estimate year (July to July), with the state (0).
+# The 2020 row is not used: it is the year ending 7/1/2020, before the
+# comparison window opens.
+sdo_components <- sdo_get_components(years[-1], c(0L, sdo_county_codes)) |>
+  dplyr::filter(datatype == "Estimate") |>
+  dplyr::transmute(
+    countyfips = sprintf("08%03d", countyfips),
+    year,
+    births,
+    deaths,
+    netmig
   )
 
 # ---- Census PEP vintage 2025 ------------------------------------------------
@@ -98,7 +82,7 @@ age_group_cols <- tibble::tibble(
 # YEAR 2 is 7/1/2020 and YEAR 7 is 7/1/2025; YEAR 1 (the April 2020 base) is
 # dropped. Rows with COUNTY 000 are the state.
 pep_age <- readr::read_csv(
-  file.path(raw_dir, "cc-est2025-agesex-08.csv"),
+  file.path(census_dir, "cc-est2025-agesex-08.csv"),
   col_types = readr::cols(.default = "c")
 ) |>
   dplyr::filter(YEAR %in% as.character(2:7)) |>
@@ -138,7 +122,7 @@ pep_age <- pep_age |>
 
 # Census components by county and year, in long form. SUMLEV 040 is the state.
 pep_alldata <- readr::read_csv(
-  file.path(raw_dir, "co-est2025-alldata.csv"),
+  file.path(census_dir, "co-est2025-alldata.csv"),
   col_types = readr::cols(.default = "c")
 ) |>
   dplyr::filter(STATE == "08") |>
@@ -232,13 +216,20 @@ totals |>
   print()
 
 cat("\n--- Counties: absolute % difference in total population, by year ---\n")
-totals |>
-  dplyr::filter(countyfips != "08000") |>
-  dplyr::summarise(
-    median_abs_pct = median(abs(pct_diff)),
-    max_abs_pct = max(abs(pct_diff)),
-    county_at_max = county[which.max(abs(pct_diff))],
-    .by = year
+county_totals <- totals |> dplyr::filter(countyfips != "08000")
+
+# The median by year, joined to the county furthest apart in that year.
+county_totals |>
+  dplyr::summarise(median_abs_pct = median(abs(pct_diff)), .by = year) |>
+  dplyr::left_join(
+    county_totals |>
+      dplyr::slice_max(abs(pct_diff), n = 1, by = year, with_ties = FALSE) |>
+      dplyr::transmute(
+        year,
+        max_abs_pct = abs(pct_diff),
+        county_at_max = county
+      ),
+    by = "year"
   ) |>
   print()
 

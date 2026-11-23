@@ -895,6 +895,44 @@ viewof basis_c = Inputs.radio(
 
 <div class="control-hint">A total rate is net migration over the whole span per 1,000 of the group's average population: the annual rate times the number of years.</div>
 
+```{ojs}
+//| echo: false
+// Saves the span currently selected above; see the "Compare spans" tab.
+// At most nine saved spans: with the current span that is ten bars per group,
+// one for each colour in the palette, so no two spans share a colour.
+viewof addSpan_c = Inputs.button("Add this span to the comparison", {
+  disabled: savedSpans_c.length >= maxSavedSpans_c,
+  reduce: () => {
+    const key = `${start_c}-${end_c}`;
+    if (
+      savedSpans_c.length < maxSavedSpans_c &&
+      !savedSpans_c.some((d) => `${d.start}-${d.end}` === key)
+    ) {
+      mutable savedSpans_c = [...savedSpans_c, { start: start_c, end: end_c }];
+    }
+  }
+})
+```
+
+```{ojs}
+//| echo: false
+maxSavedSpans_c = countyColors.length - 1
+```
+
+```{ojs}
+//| echo: false
+viewof clearSpans_c = Inputs.button("Clear the comparison", {
+  reduce: () => {
+    mutable savedSpans_c = [];
+  }
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div class="control-hint">Saved: ${savedSpans_c.length ? savedSpans_c.map((d) => `${d.start}-${d.end}`).join(", ") : "none yet"}${savedSpans_c.length >= maxSavedSpans_c ? ` (the maximum of ${maxSavedSpans_c}; clear to add others)` : ""}</div>`
+```
+
 ::: {.callout-note}
 Age groups are age at the **end** of the span. County deaths by age are
 estimated from public data, as on every page; see Methods.
@@ -906,7 +944,7 @@ estimated from public data, as on every page; see Methods.
 //| echo: false
 // One row per county (08000 = Colorado), sex, estimate year (ending July 1 of
 // `year`) and single year of age at the end of that year. Built by R/01 and
-// published by R/04 with net migration from modelled deaths.
+// summed and written by R/02, with deaths estimated from public data.
 annualRaw = FileAttachment("output/netmig-annual-sya-2020-2025.csv").csv()
 ```
 
@@ -952,28 +990,30 @@ groupLevels_c = groupings[grouping_c].map((g) => g.label)
 // A one-year cohort that ends year `year` at age_end is (end - year) years
 // older at the end of the span. Summing its annual rows gives its net
 // migration over the whole span; rows are then gathered by age group.
-rows_c = {
-  const years = end_c - start_c;
+// Used for the current span and for every saved span on the comparison tab.
+spanRows = (start, end, areas) => {
+  const years = end - start;
   const groups = groupings[grouping_c];
   const groupOf = (age) => groups.filter((g) => g.lo <= age).at(-1).label;
   const sexCode = { Male: 1, Female: 2 }[sex_c];
   const out = [];
-  for (const area of counties_c) {
+  for (const area of areas) {
     const fips = [...countyByFips].find(([, name]) => name === area)?.[0];
     const sums = new Map(groups.map((g) => [g.label, { netmig: 0, py: 0, popStart: 0, popEnd: 0 }]));
     for (const d of annual) {
-      if (d.countyfips !== fips || d.year <= start_c || d.year > end_c) continue;
+      if (d.countyfips !== fips || d.year <= start || d.year > end) continue;
       if (sexCode && d.sex !== sexCode) continue;
-      const s = sums.get(groupOf(Math.min(d.age_end + (end_c - d.year), 100)));
+      const s = sums.get(groupOf(Math.min(d.age_end + (end - d.year), 100)));
       s.netmig += d.netmig;
       s.py += d.person_years;
-      if (d.year === start_c + 1) s.popStart += d.pop_start;
-      if (d.year === end_c) s.popEnd += d.pop_end;
+      if (d.year === start + 1) s.popStart += d.pop_start;
+      if (d.year === end) s.popEnd += d.pop_end;
     }
     groups.forEach((g, i) => {
       const s = sums.get(g.label);
       out.push({
         county: area,
+        span: `${start}-${end}`,
         age_group: g.label,
         age_order: i + 1,
         pop_start: s.popStart,
@@ -988,6 +1028,32 @@ rows_c = {
   }
   return out;
 }
+```
+
+```{ojs}
+//| echo: false
+rows_c = spanRows(start_c, end_c, counties_c)
+```
+
+```{ojs}
+//| echo: false
+// Spans saved for comparison, in the order they were added. Cleared on reload.
+mutable savedSpans_c = []
+```
+
+```{ojs}
+//| echo: false
+// Every saved span plus the current one, without repeats, in time order.
+compareSpans_c = Array.from(
+  new Map(
+    [...savedSpans_c, { start: start_c, end: end_c }].map((d) => [`${d.start}-${d.end}`, d])
+  ).values()
+).sort((a, b) => a.start - b.start || a.end - b.end)
+```
+
+```{ojs}
+//| echo: false
+compareRows_c = compareSpans_c.flatMap((d) => spanRows(d.start, d.end, [firstArea_c]))
 ```
 
 ```{ojs}
@@ -1088,9 +1154,9 @@ html`${firstArea_c}: <strong>${measures_c[measure_c].fmt(allAges_c[measure_c])}<
 html`${peak_c.age_group}: <strong>${measures_c[measure_c].fmt(peak_c[measure_c])}</strong>`
 ```
 
-### Row {height="46%"}
+### Row {height="46%" .tabset}
 
-::: {.card title="Net migration by age group, selected span and areas"}
+::: {.card title="Selected span and areas"}
 
 ```{ojs}
 chart_c = Plot.plot({
@@ -1122,6 +1188,72 @@ svgDownloadButton(
   `co-netmig-${spanLabel_c}-${grouping_c}-${measure_c}.svg`,
   { domain: counties_c, range: countyColors }
 )
+```
+
+:::
+
+::: {.card title="Compare spans"}
+
+```{ojs}
+//| echo: false
+md`**${firstArea_c}** across ${compareSpans_c.length} span${compareSpans_c.length === 1 ? "" : "s"}. Add spans with the button in the sidebar; the current span is always included. Annual measures compare spans of different lengths fairly; totals do not.`
+```
+
+```{ojs}
+chart_cs = Plot.plot({
+  width,
+  height: 360,
+  marginBottom: 56,
+  x: { axis: null },
+  fx: { domain: groupLevels_c, label: "Age at end of span", tickRotate: grouping_c === "five" ? -45 : 0 },
+  y: { label: measures_c[measure_c].axis, grid: true, tickFormat: measures_c[measure_c].tickFormat },
+  color: {
+    domain: compareSpans_c.map((d) => `${d.start}-${d.end}`),
+    range: countyColors,
+    legend: true,
+    label: "Span"
+  },
+  marks: [
+    Plot.ruleY([0]),
+    Plot.barY(compareRows_c, {
+      x: "span",
+      y: measure_c,
+      fx: "age_group",
+      fill: "span",
+      title: (d) => `${d.county}, ${d.span}, aged ${d.age_group} at the end
+${measures_c[measure_c].fmt(d[measure_c])}`
+    })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+svgDownloadButton(
+  chart_cs,
+  `co-netmig-spans-${firstArea_c.replace(/\s+/g, "_")}-${grouping_c}-${measure_c}.svg`,
+  { domain: compareSpans_c.map((d) => `${d.start}-${d.end}`), range: countyColors }
+)
+```
+
+```{ojs}
+//| echo: false
+downloadLink_cs = {
+  const csv = d3.csvFormat(
+    compareRows_c.map((d) => ({
+      Area: d.county,
+      Span: d.span,
+      "Age at end": d.age_group,
+      Sex: sex_c,
+      "Net migration, span": Math.round(d.people_total),
+      "Per year": Math.round(d.people_annual),
+      "Rate per 1,000, annual": d3.format(".2f")(d.rate_annual),
+      "Rate per 1,000, span": d3.format(".2f")(d.rate_total)
+    }))
+  );
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  return html`<a class="btn btn-sm btn-outline-primary dl-button" href="${url}" download="netmig_spans_${firstArea_c.replace(/\s+/g, "_")}_${grouping_c}_${sex_c}.csv">⬇ Download CSV</a>`;
+}
 ```
 
 :::
@@ -1192,7 +1324,7 @@ the custom spans are all formed. All pages use the same method, so the
 County deaths by age are confidential, and because the population figures are
 public, net migration published by age would let anyone work them back out
 if it were built from recorded deaths. Deaths are therefore **estimated from
-public data**: statewide death rates by age, sex and year, adjusted by each
+public data**: Colorado death rates by age and sex from the NCHS life tables, adjusted by each
 county's own age pattern of deaths in CDPHE's public 2025 county summary
 reports, and scaled to the county's published death total for each year.
 County totals across all ages are unaffected. Against recorded deaths, the

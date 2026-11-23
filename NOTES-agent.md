@@ -500,14 +500,121 @@ from recorded deaths, the calibration files with CDPHE county totals, and the
 internal paths. Removing them needs a history rewrite and force-push; that is
 the owner's call (TODO 9).
 
+## 2026-11-23 (evening) — History rewritten; span comparison; review fixes
+
+**History.** Owner: "can you do the history cleanup and force push while the
+code review runs on the pr?" and, on where main should point, "Clean content
+now (Recommended)". Before rewriting, the review found that this file named the
+county cell with the largest estimated-against-recorded difference, and an
+earlier entry quoted recorded-death net migration for named counties; either
+gives a recorded death count back (exactly, or to two values) once combined
+with public population and births. Those figures moved to the internal notes,
+and the published validation summary dropped its maxima. Every commit was then
+rewritten with `git filter-branch` to strip `output/`, `data/`, `R/`, the notes,
+README, task list, report source, rendered report and workflow, and one final
+commit restores today's clean files; `main` and the PR branch both point at it
+and were force-pushed (lease checked against the old heads). A local backup of
+the old history is in `internal/` (gitignored). GitHub may keep the old commits
+reachable by their hashes until it collects them; GitHub Support can purge them.
+
+What went wrong: `git filter-branch` also removed the stripped files from the
+working tree, which looked like a deletion; `git checkout -- .` restored them
+from the new commit.
+
+**Span comparison.** Owner: "in the custom periods - can we add a comparison
+period tool? maybe just if one is created we can add/save it and add another?"
+The Custom span page has "Add this span to the comparison" and "Clear" buttons
+and a "Compare spans" tab showing the first area across the saved spans plus
+the current one. The buttons rendered as blank dark boxes: Quarto gives Observable
+Inputs buttons `btn btn-quarto` with dark text on a dark fill, set with priority
+over a plain `.sidebar form button` rule; it took `!important` (and Bootstrap's
+`--bs-btn-*` variables) in `dashboard-netmig.css`.
+
+**Review fixes** (owner: "if the fixes from the code-review haven't been
+implemented please do that also"): `R/04` now catches any county column named
+with "death" or "birth", admits `data/` files only from a vetted list, and
+rejects maxima in the validation summary (tested by planting two files);
+`R/01` stops if a county-year with people lacks components (only Broomfield
+before 2000 may) or if any county other than Rio Grande has no 2025 report;
+`R/02` and `R/03` no longer select rows with `[` or pair vectors by position.
+Outputs are unchanged.
+
+## 2026-11-23 (late) — Public inputs only, runnable from a fresh clone
+
+Owner asked whether `data/state-*.csv` was public ("Is it public data?"). It was
+not: statewide deaths by age band and births by sex tabulated from the
+restricted CDPHE records. Owner: "Replace with public data", then "can you
+create download scripts also for these so the public repo is runnable?" and
+"on the ColoradoDemography github there should be an API ... can you use this
+for pulling sdo data?".
+
+- Statewide death rates now come from the NCHS life tables for Colorado (males
+  and females, single year of age): the 1999-2001 decennial table
+  (`NVSR/60_09/lewk4_colorado.xlsx`; the PDF link on cdc.gov returns 403) and
+  annual tables for 2018-2023 (2018 files are named `Colorado-2-Male.xlsx`, not
+  `CO2.xlsx`). The 1989-91 table exists only as a scanned PDF and was not used;
+  before 2000 the 1999-2001 rates are used. Log rates are interpolated in time
+  between tables. Births are split 105:100 instead of by recorded sex ratio.
+- `R/00-download-inputs.R` fetches every file input; the CDPHE Drive folder is
+  read with `googledrive::drive_deauth()`, no sign-in.
+- `R/sdo-lookups.R` reads population and components from
+  `https://gis.dola.colorado.gov/lookups` (`/sya?choice=single`, `/components`),
+  which mirrors the database exactly (Adams 2025: 556,429; Broomfield's 2000
+  transfer and the 90+ top age before 2010 are the same). Its
+  `/component_county` endpoint hung, so county codes are fixed in the script.
+  `data.netmigrbyage` is not served, so `output/sdo-published-netmig-by-age.csv`
+  is now a fixed reference copy.
+- Cost against recorded deaths (broad groups, 2020-2025): median county cell
+  5.5 -> 6.3 people, 90th percentile 47 -> 61. Statewide and county totals are
+  unchanged.
+
+## 2026-11-23 (night) — Second history rewrite
+
+Owner: "yes lets do another history rewrite - and can you submit another PR?".
+`data/state-deaths-by-band.csv` and `data/state-births-by-sex.csv` (statewide
+tabulations of restricted records, in the restore commit and the
+span-comparison commit) were stripped from every commit with
+`git filter-branch`; the branch tip's tree is unchanged. `main` and
+`work-2026-11-23` were force-pushed with leases on the old heads; PR #2 was
+closed as superseded and PR #3 opened. Backup of the previous history:
+`internal/history-before-cleanup-2-2026-11-23.bundle`.
+
+## 2026-11-23 (night) — Second code review fixed; site published
+
+Owner: "lets go ahead and make these fixes and then render/push so the newest
+version goes live". All ten findings fixed:
+
+- Compare spans: at most nine saved spans (ten with the current one), the
+  number of palette colours; the button disables at the cap (tested in the
+  browser by adding nine spans).
+- `R/00`: downloads go to a `.part` file renamed on success; an empty file
+  counts as missing; missing CDPHE reports are fetched one by one. What failed:
+  `googledrive::drive_download()` fails when signed out ("Download failed.")
+  even though `drive_ls()` works, so the reports now come through
+  `https://drive.google.com/uc?export=download&id=<id>`. Tested by removing a
+  life table, emptying another and removing one report; a rerun restored all
+  three.
+- `R/01`: the open 90+ group's death rate weights the 89 and 90+ rates by the
+  statewide share of 89-year-olds at the start of the year; the 1999-2001
+  table, which ends at 109-110, gets its survivors at 110 added to 90+.
+  Published figures moved slightly; validation medians are unchanged to
+  within half a person.
+- `R/sdo-lookups.R`: retries each request (four tries) and checks the answer,
+  naming the URL on failure; county codes come from the Census county file
+  (sdotools is private, so the public repository cannot use its crosswalk).
+- `R/03` uses `census_dir`; `R/00` no longer hides `missing()` and pairs report
+  ids and paths in a table.
+
 ## Where to start next
 
-1. **Owner:** decide whether to rewrite the repository history to remove the
-   earlier files and references (TODO 9). It is a force-push to a public
-   repository; copies already fetched or forked are not affected.
-2. **Owner:** review and merge today's pull request.
-3. Nothing is running; logs are in `logs/finished/`.
-4. To rebuild: inside SDO run `internal/01-prepare-vital-inputs.R` only when
-   the vital records change, then `R/01` to `R/04` and the render.
-5. Do not add recorded county deaths, or anything computed from them below
-   the state level, to `output/` or `data/`; `R/04-check-outputs.R` guards it.
+1. **Owner:** review and merge PR #3 (public inputs only, download script, SDO
+   lookups service, span comparison, review fixes).
+2. Nothing is running; logs are in `logs/finished/`.
+3. To rebuild: `R/00` to `R/04`, then the render; no account or database
+   access is needed. Inside SDO, `internal/` re-runs the check against recorded
+   deaths.
+4. Never add recorded county deaths, anything computed from them below the
+   state, or a named or maximum validation figure to a tracked file;
+   `R/04-check-outputs.R` guards the data files but not prose.
+5. `internal/` exists only on this machine; copy it to a private repository or
+   the shared drive.

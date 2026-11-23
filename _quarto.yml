@@ -8,9 +8,9 @@ project:
   resources:
     - output/*.csv
 
-# The data build needs the SDO database through the sdotools package,
-# which a CI runner cannot reach. Freezing the computed chunk results
-# lets GitHub Actions render the site with Quarto alone. Re-run the R scripts
+# The data build (R/00-R/04) downloads public inputs and calls the SDO lookups
+# service, and is run locally. Freezing the computed chunk results lets GitHub
+# Actions render the site with Quarto alone. Re-run the R scripts
 # locally and re-render when the data changes; commit the _freeze directory.
 execute:
   freeze: auto
